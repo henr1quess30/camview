@@ -158,3 +158,67 @@ def test_empty_password_blocks_stream_instead_of_attempting_rtsp(
         assert warned and "senha" in warned[0].lower()
     finally:
         window.close()
+
+
+def test_discovered_channels_create_cameras_with_real_names_and_gaps(
+    qapp: QApplication,
+    db_connection: sqlite3.Connection,
+    fake_keyring: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Discovery is authoritative: real NVRs skip channels and name cameras."""
+    from camview.services.hikvision import DiscoveredChannel
+
+    def fake_exec(self: NvrDialog) -> QDialog.DialogCode:
+        self.name_edit.setText("Fabrica")
+        self.host_edit.setText("192.0.2.10")
+        self.username_edit.setText("admin")
+        self.password_edit.setText("test-password")
+        self.channel_count_spin.setValue(16)
+        self.discovered_channels = [
+            DiscoveredChannel(channel_number=1, name="MONTAGEM"),
+            DiscoveredChannel(channel_number=2, name="Porta Principal"),
+            DiscoveredChannel(channel_number=4, name="Canal 4"),
+        ]
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(NvrDialog, "exec", fake_exec)
+
+    window = MainWindow(connection=db_connection)
+    try:
+        window._add_nvr()
+
+        nvr = window._nvr_repository.list_all()[0]
+        cameras = window._camera_repository.list_by_nvr(nvr.id)  # type: ignore[arg-type]
+
+        # Channel 3 is absent on the device, so no dead camera row for it.
+        assert [c.channel_number for c in cameras] == [1, 2, 4]
+        assert [c.name for c in cameras] == ["MONTAGEM", "Porta Principal", "Canal 4"]
+    finally:
+        window.close()
+
+
+def test_without_discovery_falls_back_to_sequential_channels(
+    qapp: QApplication,
+    db_connection: sqlite3.Connection,
+    fake_keyring: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_exec(self: NvrDialog) -> QDialog.DialogCode:
+        self.name_edit.setText("Simples")
+        self.host_edit.setText("192.0.2.11")
+        self.username_edit.setText("admin")
+        self.password_edit.setText("test-password")
+        self.channel_count_spin.setValue(3)
+        return QDialog.DialogCode.Accepted  # discovered_channels stays None
+
+    monkeypatch.setattr(NvrDialog, "exec", fake_exec)
+
+    window = MainWindow(connection=db_connection)
+    try:
+        window._add_nvr()
+        nvr = window._nvr_repository.list_all()[0]
+        cameras = window._camera_repository.list_by_nvr(nvr.id)  # type: ignore[arg-type]
+        assert [c.channel_number for c in cameras] == [1, 2, 3]
+    finally:
+        window.close()

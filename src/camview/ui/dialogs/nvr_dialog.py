@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -22,6 +23,11 @@ from PySide6.QtWidgets import (
 from camview.models.camera import StreamType
 from camview.models.nvr import Nvr
 from camview.services.connectivity import check_tcp_connection
+from camview.services.hikvision import (
+    DiscoveredChannel,
+    DiscoveryError,
+    discover_channels,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +52,29 @@ class _ConnectionTestWorker(QThread):
             self.succeeded.emit()
 
 
+class _ChannelDiscoveryWorker(QThread):
+    """Runs Hikvision ISAPI channel discovery off the GUI thread."""
+
+    succeeded = Signal(list)
+    failed = Signal(str)
+
+    def __init__(
+        self, host: str, username: str, password: str, parent: QWidget | None = None
+    ) -> None:
+        super().__init__(parent)
+        self._host = host
+        self._username = username
+        self._password = password
+
+    def run(self) -> None:
+        try:
+            channels = discover_channels(self._host, self._username, self._password)
+        except DiscoveryError as exc:
+            self.failed.emit(str(exc))
+        else:
+            self.succeeded.emit(channels)
+
+
 class NvrDialog(QDialog):
     """Add or edit an NVR's registration details.
 
@@ -64,6 +93,10 @@ class NvrDialog(QDialog):
         self.setWindowTitle("Editar NVR" if nvr is not None else "Adicionar NVR")
         self.setMinimumWidth(380)
         self._test_worker: _ConnectionTestWorker | None = None
+        self._discovery_worker: _ChannelDiscoveryWorker | None = None
+        #: Populated by "Detectar canais"; consumed by MainWindow so the
+        #: cameras it creates use the device's real channels and names.
+        self.discovered_channels: list[DiscoveredChannel] | None = None
 
         self.name_edit = QLineEdit(nvr.name if nvr else "")
         self.host_edit = QLineEdit(nvr.host if nvr else "")
@@ -89,6 +122,13 @@ class NvrDialog(QDialog):
 
         self.test_button = QPushButton("Testar conexão")
         self.test_button.clicked.connect(self._on_test_connection)
+
+        self.detect_button = QPushButton("Detectar canais")
+        self.detect_button.setToolTip(
+            "Pergunta ao equipamento quais canais existem e como se chamam"
+        )
+        self.detect_button.clicked.connect(self._on_detect_channels)
+
         self.test_result_label = QLabel("")
         self.test_result_label.setWordWrap(True)
 
@@ -107,9 +147,13 @@ class NvrDialog(QDialog):
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
 
+        actions = QHBoxLayout()
+        actions.addWidget(self.test_button)
+        actions.addWidget(self.detect_button)
+
         layout = QVBoxLayout(self)
         layout.addLayout(form)
-        layout.addWidget(self.test_button)
+        layout.addLayout(actions)
         layout.addWidget(self.test_result_label)
         layout.addWidget(buttons)
 
@@ -127,6 +171,43 @@ class NvrDialog(QDialog):
         self._test_worker.failed.connect(self._on_test_failed)
         self._test_worker.finished.connect(lambda: self.test_button.setEnabled(True))
         self._test_worker.start()
+
+    def _on_detect_channels(self) -> None:
+        host = self.host_edit.text().strip()
+        username = self.username_edit.text().strip()
+        password = self.password_edit.text()
+        if not (host and username and password):
+            self.test_result_label.setText(
+                "Informe endereço, usuário e senha antes de detectar os canais."
+            )
+            return
+
+        self.detect_button.setEnabled(False)
+        self.test_result_label.setText("Detectando canais...")
+
+        self._discovery_worker = _ChannelDiscoveryWorker(host, username, password, self)
+        self._discovery_worker.succeeded.connect(self._on_discovery_succeeded)
+        self._discovery_worker.failed.connect(self._on_discovery_failed)
+        self._discovery_worker.finished.connect(
+            lambda: self.detect_button.setEnabled(True)
+        )
+        self._discovery_worker.start()
+
+    def _on_discovery_succeeded(self, channels: list[DiscoveredChannel]) -> None:
+        self.discovered_channels = channels
+        # The device is the authority on how many channels exist, so mirror
+        # its answer into the spin box rather than leaving the two disagreeing.
+        self.channel_count_spin.setValue(max(c.channel_number for c in channels))
+        named = sum(1 for c in channels if not c.name.startswith("Canal "))
+        self.test_result_label.setText(
+            f"{len(channels)} canais detectados"
+            + (f", {named} com nome configurado." if named else ".")
+        )
+
+    def _on_discovery_failed(self, message: str) -> None:
+        logger.warning("Channel discovery failed: %s", message)
+        self.discovered_channels = None
+        self.test_result_label.setText(f"Não foi possível detectar canais: {message}")
 
     def _on_test_succeeded(self) -> None:
         self.test_result_label.setText("Conexão bem-sucedida.")

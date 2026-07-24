@@ -33,6 +33,7 @@ from camview.services.credentials import (
     get_nvr_password,
     set_nvr_password,
 )
+from camview.services.hikvision import DiscoveredChannel
 from camview.services.rtsp import build_channel_url, generate_missing_channel_cameras
 from camview.ui.dialogs.nvr_dialog import NvrDialog
 from camview.ui.widgets.device_tree import CAMERA_ID_ROLE, NVR_ID_ROLE, DeviceTree
@@ -154,11 +155,7 @@ class MainWindow(QMainWindow):
         try:
             created = self._nvr_repository.create(nvr)
             set_nvr_password(created.id, password)  # type: ignore[arg-type]
-            for camera in generate_missing_channel_cameras(
-                created.id,  # type: ignore[arg-type]
-                created.channel_count,
-            ):
-                self._camera_repository.create(camera)
+            self._create_cameras(created, dialog.discovered_channels)
         except (CredentialsError, sqlite3.Error) as exc:
             logger.error("Failed to add NVR: %s", exc)
             QMessageBox.critical(self, "CamView", str(exc))
@@ -186,14 +183,7 @@ class MainWindow(QMainWindow):
         try:
             self._nvr_repository.update(updated)
             set_nvr_password(nvr_id, dialog.result_password())
-            existing_channels = {
-                camera.channel_number
-                for camera in self._camera_repository.list_by_nvr(nvr_id)
-            }
-            for camera in generate_missing_channel_cameras(
-                nvr_id, updated.channel_count, existing_channels
-            ):
-                self._camera_repository.create(camera)
+            self._create_cameras(updated, dialog.discovered_channels)
         except (CredentialsError, sqlite3.Error) as exc:
             logger.error("Failed to update NVR %d: %s", nvr_id, exc)
             QMessageBox.critical(self, "CamView", str(exc))
@@ -201,6 +191,44 @@ class MainWindow(QMainWindow):
 
         self.device_tree.refresh()
         self.statusBar().showMessage(f"NVR '{updated.name}' atualizado.", 5000)
+
+    def _create_cameras(
+        self, nvr: Nvr, discovered: list[DiscoveredChannel] | None
+    ) -> None:
+        """Create the camera rows this NVR is missing.
+
+        Prefers the channel list the device itself reported: real NVRs have
+        gaps (a 16-slot recorder with nothing on channel 12), and they know
+        each camera's configured name. Without discovery, falls back to a
+        plain ``1..channel_count`` sequence.
+
+        Existing channels are never touched, so editing an NVR only ever
+        adds what is new.
+        """
+        existing = {
+            camera.channel_number
+            for camera in self._camera_repository.list_by_nvr(nvr.id)  # type: ignore[arg-type]
+        }
+
+        if discovered:
+            new_cameras = [
+                Camera(
+                    nvr_id=nvr.id,  # type: ignore[arg-type]
+                    channel_number=channel.channel_number,
+                    name=channel.name,
+                )
+                for channel in discovered
+                if channel.channel_number not in existing
+            ]
+        else:
+            new_cameras = generate_missing_channel_cameras(
+                nvr.id,  # type: ignore[arg-type]
+                nvr.channel_count,
+                existing,
+            )
+
+        for camera in new_cameras:
+            self._camera_repository.create(camera)
 
     def _remove_nvr(self, nvr_id: int) -> None:
         nvr = self._nvr_repository.get(nvr_id)
