@@ -91,6 +91,8 @@ Como usar hoje:
 
 - Menu **NVR → Adicionar NVR...** para cadastrar um equipamento (os canais
   são gerados automaticamente).
+- **Duplo clique no NVR** abre **todos os canais dele de uma vez**, ajustando
+  a grade automaticamente ao número de câmeras (4 canais → 2x2, 16 → 4x4).
 - **Duplo clique** numa câmera da árvore lateral abre o stream na primeira
   célula livre; ou **arraste** a câmera para uma célula específica.
 - **Arraste** uma célula sobre outra para trocá-las de posição.

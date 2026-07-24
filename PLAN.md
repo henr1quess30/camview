@@ -166,6 +166,16 @@ restaurar com duplo clique ou Esc. Borda discreta na célula selecionada.
 - **Limpeza:** reduzir a grade fecha e libera os players das células que
   deixaram de existir; fechar a janela libera todos.
 
+### Abrir um NVR inteiro (sugestão do usuário, implementada)
+
+Duplo clique na pasta do NVR abre todos os canais habilitados de uma vez,
+escolhendo a menor grade que caiba (`smallest_shape_for`) e substituindo o
+que estiver na tela — "ver esse NVR" é um comando completo, misturar com
+outros equipamentos seria surpreendente. A senha é resolvida **uma vez**
+por NVR (`_nvr_password_or_warn`), não por câmera, senão um NVR sem senha
+cadastrada geraria 16 diálogos de aviso. Validado com hardware real: a
+grade saltou de 2x2 para 4x4 sozinha e 15/16 canais abriram.
+
 ### Validação real (NVR Hikvision ao vivo)
 
 | Grade | Resultado |

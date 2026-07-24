@@ -18,13 +18,26 @@ from camview.ui.widgets.video_tile import GRID_POSITION_MIME_TYPE, VideoTile
 
 logger = logging.getLogger(__name__)
 
-#: Grid shapes offered in the toolbar, as (rows, columns).
+#: Grid shapes offered in the toolbar, as (rows, columns). Ordered smallest
+#: first, which :func:`smallest_shape_for` relies on.
 GRID_SHAPES: dict[str, tuple[int, int]] = {
     "1x1": (1, 1),
     "2x2": (2, 2),
     "3x3": (3, 3),
     "4x4": (4, 4),
 }
+
+
+def smallest_shape_for(camera_count: int) -> tuple[int, int]:
+    """Smallest offered grid that fits ``camera_count`` cameras.
+
+    Falls back to the largest shape when there are more cameras than
+    cells; the caller decides what to do with the overflow.
+    """
+    for rows, columns in GRID_SHAPES.values():
+        if rows * columns >= camera_count:
+            return rows, columns
+    return GRID_SHAPES["4x4"]
 
 
 class _EmptyCell(QFrame):

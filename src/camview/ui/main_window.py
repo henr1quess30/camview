@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QComboBox,
@@ -25,7 +25,8 @@ from PySide6.QtWidgets import (
 )
 
 from camview.database.repositories import CameraRepository, NvrRepository
-from camview.models.camera import StreamType
+from camview.models.camera import Camera, StreamType
+from camview.models.nvr import Nvr
 from camview.services.credentials import (
     CredentialsError,
     delete_nvr_password,
@@ -35,7 +36,7 @@ from camview.services.credentials import (
 from camview.services.rtsp import build_channel_url, generate_missing_channel_cameras
 from camview.ui.dialogs.nvr_dialog import NvrDialog
 from camview.ui.widgets.device_tree import CAMERA_ID_ROLE, NVR_ID_ROLE, DeviceTree
-from camview.ui.widgets.video_grid import GRID_SHAPES, VideoGrid
+from camview.ui.widgets.video_grid import GRID_SHAPES, VideoGrid, smallest_shape_for
 from camview.ui.widgets.video_tile import VideoTile
 
 logger = logging.getLogger(__name__)
@@ -229,31 +230,34 @@ class MainWindow(QMainWindow):
         self, item: QTreeWidgetItem, column: int
     ) -> None:
         camera_id = item.data(0, CAMERA_ID_ROLE)
-        if camera_id is None:
-            return  # An NVR row was double-clicked; nothing to play yet.
-
-        position = self.video_grid.first_free_position()
-        if position is None:
-            self.statusBar().showMessage(
-                "Mosaico cheio — remova uma câmera ou escolha uma grade maior.", 5000
-            )
-            return
-        self._open_camera_at(camera_id, position)
-
-    def _open_camera_at(self, camera_id: int, position: int) -> None:
-        """Build the RTSP URL for ``camera_id`` and open it in cell ``position``."""
-        camera = self._camera_repository.get(camera_id)
-        if camera is None:
-            return
-        nvr = self._nvr_repository.get(camera.nvr_id)
-        if nvr is None:
+        if camera_id is not None:
+            position = self.video_grid.first_free_position()
+            if position is None:
+                self.statusBar().showMessage(
+                    "Mosaico cheio — remova uma câmera ou escolha uma grade maior.",
+                    5000,
+                )
+                return
+            self._open_camera_at(camera_id, position)
             return
 
+        nvr_id = item.data(0, NVR_ID_ROLE)
+        if nvr_id is not None:
+            self._open_nvr_mosaic(nvr_id)
+
+    def _nvr_password_or_warn(self, nvr: Nvr) -> str | None:
+        """Fetch the NVR's password, reporting to the user if unusable.
+
+        Returns ``None`` when the stream must not be attempted. Callers
+        opening several cameras at once should call this once, not per
+        camera, so a missing password produces one message rather than one
+        per cell.
+        """
         try:
             password = get_nvr_password(nvr.id) or ""  # type: ignore[arg-type]
         except CredentialsError as exc:
             QMessageBox.critical(self, "CamView", str(exc))
-            return
+            return None
 
         # Never attempt RTSP with an empty password. NVRs (Hikvision in
         # particular) lock out the source IP after a few failed logins, so a
@@ -266,9 +270,17 @@ class MainWindow(QMainWindow):
                 f"Nenhuma senha armazenada para o NVR '{nvr.name}'.\n\n"
                 "Edite o NVR e informe a senha antes de abrir o stream.",
             )
-            return
+            return None
+        return password
 
-        stream_type = self._mosaic_stream_type(nvr.default_stream)
+    def _place_camera(
+        self,
+        camera: Camera,
+        nvr: Nvr,
+        password: str,
+        position: int,
+        stream_type: StreamType,
+    ) -> None:
         url = build_channel_url(
             host=nvr.host,
             port=nvr.rtsp_port,
@@ -277,10 +289,76 @@ class MainWindow(QMainWindow):
             channel_number=camera.channel_number,
             stream_type=stream_type,
         )
-
-        tile = VideoTile(title=camera.name, url=url, camera_id=camera_id)
+        tile = VideoTile(title=camera.name, url=url, camera_id=camera.id)
         self.video_grid.place_tile(position, tile)
+
+    def _open_camera_at(self, camera_id: int, position: int) -> None:
+        """Build the RTSP URL for ``camera_id`` and open it in cell ``position``."""
+        camera = self._camera_repository.get(camera_id)
+        if camera is None:
+            return
+        nvr = self._nvr_repository.get(camera.nvr_id)
+        if nvr is None:
+            return
+
+        password = self._nvr_password_or_warn(nvr)
+        if password is None:
+            return
+
+        self._place_camera(
+            camera,
+            nvr,
+            password,
+            position,
+            self._mosaic_stream_type(nvr.default_stream),
+        )
         self.statusBar().showMessage(f"Conectando a '{camera.name}'...", 5000)
+
+    def _open_nvr_mosaic(self, nvr_id: int) -> None:
+        """Open every channel of one NVR, resizing the mosaic to fit.
+
+        Replaces whatever is currently on screen — double-clicking an NVR
+        means "show me this device", so a partial mix with other NVRs would
+        be surprising.
+        """
+        nvr = self._nvr_repository.get(nvr_id)
+        if nvr is None:
+            return
+
+        cameras = [
+            camera
+            for camera in self._camera_repository.list_by_nvr(nvr_id)
+            if camera.enabled
+        ]
+        if not cameras:
+            self.statusBar().showMessage(
+                f"O NVR '{nvr.name}' não tem câmeras cadastradas.", 5000
+            )
+            return
+
+        password = self._nvr_password_or_warn(nvr)
+        if password is None:
+            return
+
+        rows, columns = smallest_shape_for(len(cameras))
+        self.video_grid.clear()
+        self._apply_grid_shape(rows, columns)
+
+        visible = cameras[: rows * columns]
+        stream_type = self._mosaic_stream_type(nvr.default_stream)
+        for position, camera in enumerate(visible):
+            self._place_camera(camera, nvr, password, position, stream_type)
+
+        message = f"Abrindo {len(visible)} câmeras de '{nvr.name}'..."
+        if len(cameras) > len(visible):
+            message += f" ({len(cameras) - len(visible)} não cabem no mosaico.)"
+        self.statusBar().showMessage(message, 5000)
+
+    def _apply_grid_shape(self, rows: int, columns: int) -> None:
+        """Reshape the grid and keep the toolbar selector in sync."""
+        self.video_grid.set_grid_shape(rows, columns)
+        with QSignalBlocker(self.layout_selector):
+            self.layout_selector.setCurrentText(f"{rows}x{columns}")
 
     def _mosaic_stream_type(self, nvr_default: StreamType) -> StreamType:
         """Which stream to use for a mosaic cell.
