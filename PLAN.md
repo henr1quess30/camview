@@ -15,7 +15,7 @@ validada antes de avançar para a próxima.
 - [x] Fase 1 — Persistência SQLite
 - [x] Fase 2 — Cadastro de NVR e geração de canais Hikvision
 - [x] Fase 3 — Célula de vídeo única
-- [ ] Fase 4 — Mosaico
+- [x] Fase 4 — Mosaico
 - [ ] Fase 5 — Layouts salvos
 - [ ] Fase 6 — Restauração de estado ao abrir
 - [ ] Fase 7 — Tela de configurações
@@ -140,13 +140,48 @@ aconteça com usuários reais, `_show_camera_stream()` agora recusa abrir
 o stream quando não há senha armazenada, exibindo uma mensagem clara em
 vez de tentar autenticar. Coberto por teste de regressão.
 
-## Fase 4 — Mosaico
+## Fase 4 — Mosaico ✅
 
-`VideoGrid` suportando até 16 células (`QGridLayout`), grades 1x1/2x2/3x3/4x4
-selecionáveis pela toolbar. Adicionar câmera por duplo clique (primeira célula
-livre) ou drag-and-drop numa célula específica; trocar câmeras de posição por
-drag-and-drop. Maximizar célula com duplo clique / restaurar com duplo clique
-ou Esc.
+`VideoGrid` (`QGridLayout`) com grades 1x1/2x2/3x3/4x4 selecionáveis pela
+toolbar. Células endereçadas por um inteiro `position = row * columns + col`
+— é isso que a Fase 5 vai persistir. Adicionar câmera por duplo clique
+(primeira célula livre) ou drag-and-drop numa célula específica; trocar
+câmeras de posição por drag-and-drop. Maximizar com duplo clique,
+restaurar com duplo clique ou Esc. Borda discreta na célula selecionada.
+
+### Decisões de implementação
+
+- **Eventos de mouse/teclado sobre o vídeo:** o libVLC captura mouse e
+  teclado na própria janela de vídeo, engolindo os eventos que o Qt
+  precisa. Resolvido com `video_set_mouse_input(False)` e
+  `video_set_key_input(False)`.
+- **Maximizar sem reparentar:** ao maximizar, o tile é re-adicionado ao
+  *mesmo* layout com `span` cheio, em vez de movido para outro widget.
+  Reparentar recriaria a janela X11 e invalidaria o handle que o libVLC
+  já está usando. Há teste que verifica que o `winId` não muda.
+- **Substream no mosaico:** grades maiores que 1x1 usam substream
+  (requisito de desempenho — 16 streams principais seriam banda e
+  decodificação desnecessárias para uma célula pequena). Grade 1x1
+  respeita o `default_stream` do NVR. A Fase 5 torna isso por célula.
+- **Limpeza:** reduzir a grade fecha e libera os players das células que
+  deixaram de existir; fechar a janela libera todos.
+
+### Validação real (NVR Hikvision ao vivo)
+
+| Grade | Resultado |
+|-------|-----------|
+| 2x2   | 4/4 células reproduzindo, 0 falhas |
+| 3x3   | 9/9 células reproduzindo, 0 falhas |
+| 4x4   | 15/16 células reproduzindo |
+
+A única célula que falhou (canal 12) foi verificada isoladamente e falha
+do mesmo jeito — não há câmera nesse canal do NVR. O CamView tratou o
+erro graciosamente: a célula ficou em estado de erro, as outras 15
+continuaram reproduzindo, sem travar a interface.
+
+Também verificado: maximizar/restaurar mantém o vídeo rodando, e todos
+os players são liberados ao fechar a janela. As resoluções observadas
+(640x360, 704x480, 352x240) confirmam que o substream está sendo usado.
 
 ## Fase 5 — Layouts salvos
 

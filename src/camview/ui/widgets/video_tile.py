@@ -14,12 +14,15 @@ import logging
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import QMimeData, QPoint, Qt, QTimer, Signal
+from PySide6.QtGui import QDrag, QIcon, QMouseEvent, QPainter, QPaintEvent
 from PySide6.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QLabel,
     QStackedLayout,
+    QStyle,
+    QStyleOption,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -50,11 +53,16 @@ _STATUS_COLORS: dict[ConnectionStatus, str] = {
     ConnectionStatus.ERROR: "#e53e3e",
 }
 
+#: Mime type used when dragging an already-placed tile to another grid cell.
+GRID_POSITION_MIME_TYPE = "application/x-camview-grid-position"
+
 
 class VideoTile(QWidget):
     """A single mosaic cell: video area, header (status/name/close), auto-reconnect."""
 
     closeRequested = Signal()
+    doubleClicked = Signal()
+    clicked = Signal()
 
     _playingSignal = Signal()
     _errorSignal = Signal(str)
@@ -65,15 +73,21 @@ class VideoTile(QWidget):
         title: str,
         url: str,
         playback_options: PlaybackOptions | None = None,
+        camera_id: int | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.title = title
         self.url = url
+        self.camera_id = camera_id
+        #: Set by VideoGrid when the tile is placed; ``None`` when unplaced.
+        self.grid_position: int | None = None
         self._playback_options = playback_options or PlaybackOptions()
         self._backoff = ReconnectBackoff()
         self._player: vlc.MediaPlayer | None = None
         self.status = ConnectionStatus.CONNECTING
+        self._selected = False
+        self._drag_origin: QPoint | None = None
 
         self._build_ui()
 
@@ -147,6 +161,7 @@ class VideoTile(QWidget):
         outer.addWidget(header)
         outer.addWidget(stack_container, stretch=1)
 
+        self.set_selected(False)
         self._set_status(ConnectionStatus.CONNECTING, "Conectando...")
 
     def _set_status(self, status: ConnectionStatus, message: str = "") -> None:
@@ -185,6 +200,11 @@ class VideoTile(QWidget):
             event_manager.event_attach(
                 vlc.EventType.MediaPlayerEndReached, self._handle_vlc_ended
             )
+            # libVLC otherwise grabs mouse/keyboard on its own video window,
+            # swallowing the events Qt needs for double-click-to-maximize,
+            # drag-to-reposition and Esc. Turning both off lets them reach us.
+            self._player.video_set_mouse_input(False)
+            self._player.video_set_key_input(False)
             self._player.set_xwindow(int(self.video_widget.winId()))
 
         media = instance.media_new(self.url, *self._playback_options.to_media_options())
@@ -222,6 +242,63 @@ class VideoTile(QWidget):
             ConnectionStatus.ERROR, f"{message}\nReconectando em {delay}s..."
         )
         self._reconnect_timer.start(delay * 1000)
+
+    def set_selected(self, selected: bool) -> None:
+        """Draw (or clear) the discreet border marking the focused tile.
+
+        The unselected state keeps a transparent border of the same width so
+        selecting a tile never shifts the layout by a pixel.
+        """
+        self._selected = selected
+        border = "1px solid palette(highlight)" if selected else "1px solid transparent"
+        self.setStyleSheet(f"VideoTile {{ border: {border}; }}")
+
+    def is_selected(self) -> bool:
+        return self._selected
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        # Qt stylesheets are ignored on plain QWidget subclasses unless the
+        # widget explicitly paints itself through the style system. Without
+        # this, set_selected()'s border would never appear.
+        option = QStyleOption()
+        option.initFrom(self)
+        painter = QPainter(self)
+        self.style().drawPrimitive(
+            QStyle.PrimitiveElement.PE_Widget, option, painter, self
+        )
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_origin = event.position().toPoint()
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        if (
+            self._drag_origin is None
+            or self.grid_position is None
+            or not (event.buttons() & Qt.MouseButton.LeftButton)
+        ):
+            super().mouseMoveEvent(event)
+            return
+
+        distance = (event.position().toPoint() - self._drag_origin).manhattanLength()
+        if distance < QApplication.startDragDistance():
+            return
+
+        mime = QMimeData()
+        mime.setData(
+            GRID_POSITION_MIME_TYPE, str(self.grid_position).encode("ascii")
+        )
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        drag.exec(Qt.DropAction.MoveAction)
+        self._drag_origin = None
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.doubleClicked.emit()
+        super().mouseDoubleClickEvent(event)
 
     def close_stream(self) -> None:
         """Stop and release the player.

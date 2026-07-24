@@ -9,6 +9,7 @@ from pathlib import Path
 import keyring
 import keyring.backend
 import pytest
+from fakes import FakeInstance
 from PySide6.QtWidgets import QApplication
 
 from camview.database.connection import initialize_database
@@ -51,6 +52,16 @@ class FakeKeyringBackend(keyring.backend.KeyringBackend):
             from keyring.errors import PasswordDeleteError
 
             raise PasswordDeleteError("not found") from exc
+
+
+@pytest.fixture
+def fake_instance(monkeypatch: pytest.MonkeyPatch) -> FakeInstance:
+    """Replace the global vlc.Instance getter with an in-memory fake."""
+    instance = FakeInstance()
+    monkeypatch.setattr(
+        "camview.ui.widgets.video_tile.get_vlc_instance", lambda: instance
+    )
+    return instance
 
 
 @pytest.fixture

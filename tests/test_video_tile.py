@@ -9,75 +9,13 @@ actually calls back.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
 import pytest
 import vlc
+from fakes import FakeInstance
 from PySide6.QtWidgets import QApplication
 
 from camview.services.stream_manager import PlaybackOptions, VlcUnavailableError
 from camview.ui.widgets.video_tile import ConnectionStatus, VideoTile
-
-
-class FakeEventManager:
-    def __init__(self) -> None:
-        self._callbacks: dict[object, Callable[[object], None]] = {}
-
-    def event_attach(self, event_type: object, callback: Callable[[object], None]) -> None:
-        self._callbacks[event_type] = callback
-
-    def trigger(self, event_type: object) -> None:
-        self._callbacks[event_type](None)
-
-
-class FakePlayer:
-    def __init__(self) -> None:
-        self.event_manager_obj = FakeEventManager()
-        self.played = False
-        self.stopped = False
-        self.released = False
-        self.media: object = None
-        self.xwindow: int | None = None
-
-    def event_manager(self) -> FakeEventManager:
-        return self.event_manager_obj
-
-    def set_xwindow(self, win_id: int) -> None:
-        self.xwindow = win_id
-
-    def set_media(self, media: object) -> None:
-        self.media = media
-
-    def play(self) -> None:
-        self.played = True
-
-    def stop(self) -> None:
-        self.stopped = True
-
-    def release(self) -> None:
-        self.released = True
-
-
-class FakeInstance:
-    def __init__(self) -> None:
-        self.players: list[FakePlayer] = []
-
-    def media_player_new(self) -> FakePlayer:
-        player = FakePlayer()
-        self.players.append(player)
-        return player
-
-    def media_new(self, url: str, *options: str) -> tuple[str, tuple[str, ...]]:
-        return (url, options)
-
-
-@pytest.fixture
-def fake_instance(monkeypatch: pytest.MonkeyPatch) -> FakeInstance:
-    instance = FakeInstance()
-    monkeypatch.setattr(
-        "camview.ui.widgets.video_tile.get_vlc_instance", lambda: instance
-    )
-    return instance
 
 
 def make_tile(qapp: QApplication, url: str = "rtsp://example.invalid/101") -> VideoTile:
@@ -104,6 +42,9 @@ class TestConnect:
         player = fake_instance.players[0]
         assert player.played is True
         assert player.xwindow == int(tile.video_widget.winId())
+        # libVLC must not grab input, or Qt never sees double-click/drag/Esc.
+        assert player.mouse_input is False
+        assert player.key_input is False
         tile.close_stream()
 
     def test_reconnecting_reuses_the_same_player(

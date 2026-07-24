@@ -16,17 +16,16 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDockWidget,
-    QLabel,
     QMainWindow,
     QMenu,
     QMessageBox,
     QToolBar,
     QTreeWidgetItem,
-    QVBoxLayout,
     QWidget,
 )
 
 from camview.database.repositories import CameraRepository, NvrRepository
+from camview.models.camera import StreamType
 from camview.services.credentials import (
     CredentialsError,
     delete_nvr_password,
@@ -36,11 +35,12 @@ from camview.services.credentials import (
 from camview.services.rtsp import build_channel_url, generate_missing_channel_cameras
 from camview.ui.dialogs.nvr_dialog import NvrDialog
 from camview.ui.widgets.device_tree import CAMERA_ID_ROLE, NVR_ID_ROLE, DeviceTree
+from camview.ui.widgets.video_grid import GRID_SHAPES, VideoGrid
 from camview.ui.widgets.video_tile import VideoTile
 
 logger = logging.getLogger(__name__)
 
-_MOSAIC_LAYOUTS = ["1x1", "2x2", "3x3", "4x4"]
+DEFAULT_GRID_SHAPE = "2x2"
 
 
 class MainWindow(QMainWindow):
@@ -57,7 +57,6 @@ class MainWindow(QMainWindow):
         self._connection = connection
         self._nvr_repository = NvrRepository(connection)
         self._camera_repository = CameraRepository(connection)
-        self._video_tile: VideoTile | None = None
 
         self._build_sidebar()
         self._build_central_widget()
@@ -87,14 +86,10 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
 
     def _build_central_widget(self) -> None:
-        placeholder = QLabel("Mosaic area — no cameras yet")
-        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        placeholder.setStyleSheet("color: palette(mid); font-size: 14pt;")
-
-        central = QWidget()
-        layout = QVBoxLayout(central)
-        layout.addWidget(placeholder)
-        self.setCentralWidget(central)
+        rows, columns = GRID_SHAPES[DEFAULT_GRID_SHAPE]
+        self.video_grid = VideoGrid(rows=rows, columns=columns)
+        self.video_grid.cameraDropped.connect(self._on_camera_dropped)
+        self.setCentralWidget(self.video_grid)
 
     def _build_toolbar(self) -> None:
         toolbar = QToolBar("Main Toolbar", self)
@@ -102,9 +97,10 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
 
         self.layout_selector = QComboBox()
-        self.layout_selector.addItems(_MOSAIC_LAYOUTS)
-        self.layout_selector.setEnabled(False)
-        self.layout_selector.setToolTip("Mosaic layout (enabled in a later phase)")
+        self.layout_selector.addItems(list(GRID_SHAPES))
+        self.layout_selector.setCurrentText(DEFAULT_GRID_SHAPE)
+        self.layout_selector.setToolTip("Formato do mosaico")
+        self.layout_selector.currentTextChanged.connect(self._on_grid_shape_changed)
         toolbar.addWidget(self.layout_selector)
 
         self.addToolBar(toolbar)
@@ -127,8 +123,8 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Ready")
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        if self._video_tile is not None:
-            self._video_tile.close_stream()
+        # Release every libVLC player before the widgets are torn down.
+        self.video_grid.clear()
         super().closeEvent(event)
 
     def _show_device_tree_context_menu(self, position: object) -> None:
@@ -235,9 +231,17 @@ class MainWindow(QMainWindow):
         camera_id = item.data(0, CAMERA_ID_ROLE)
         if camera_id is None:
             return  # An NVR row was double-clicked; nothing to play yet.
-        self._show_camera_stream(camera_id)
 
-    def _show_camera_stream(self, camera_id: int) -> None:
+        position = self.video_grid.first_free_position()
+        if position is None:
+            self.statusBar().showMessage(
+                "Mosaico cheio — remova uma câmera ou escolha uma grade maior.", 5000
+            )
+            return
+        self._open_camera_at(camera_id, position)
+
+    def _open_camera_at(self, camera_id: int, position: int) -> None:
+        """Build the RTSP URL for ``camera_id`` and open it in cell ``position``."""
         camera = self._camera_repository.get(camera_id)
         if camera is None:
             return
@@ -264,24 +268,39 @@ class MainWindow(QMainWindow):
             )
             return
 
+        stream_type = self._mosaic_stream_type(nvr.default_stream)
         url = build_channel_url(
             host=nvr.host,
             port=nvr.rtsp_port,
             username=nvr.username,
             password=password,
             channel_number=camera.channel_number,
-            stream_type=nvr.default_stream,
+            stream_type=stream_type,
         )
 
-        self._close_current_tile()
-        tile = VideoTile(title=camera.name, url=url, parent=self)
-        tile.closeRequested.connect(self._close_current_tile)
-        self._video_tile = tile
-        self.setCentralWidget(tile)
+        tile = VideoTile(title=camera.name, url=url, camera_id=camera_id)
+        self.video_grid.place_tile(position, tile)
         self.statusBar().showMessage(f"Conectando a '{camera.name}'...", 5000)
 
-    def _close_current_tile(self) -> None:
-        if self._video_tile is not None:
-            self._video_tile.close_stream()
-            self._video_tile = None
-        self._build_central_widget()
+    def _mosaic_stream_type(self, nvr_default: StreamType) -> StreamType:
+        """Which stream to use for a mosaic cell.
+
+        Substream for real mosaics: 16 simultaneous main streams would be
+        both needless bandwidth and far more decoding than a cell-sized
+        viewport can show. A 1x1 grid is effectively single-camera view, so
+        there the NVR's own default is honoured. Phase 5 makes this
+        per-cell and persists it with the layout.
+        """
+        if self.video_grid.cell_count == 1:
+            return nvr_default
+        return StreamType.SUB
+
+    def _on_camera_dropped(self, camera_id: int, position: int) -> None:
+        self._open_camera_at(camera_id, position)
+
+    def _on_grid_shape_changed(self, label: str) -> None:
+        shape = GRID_SHAPES.get(label)
+        if shape is None:
+            return
+        self.video_grid.set_grid_shape(*shape)
+        self.statusBar().showMessage(f"Mosaico {label}.", 3000)

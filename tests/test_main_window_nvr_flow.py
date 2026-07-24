@@ -150,9 +150,11 @@ def test_empty_password_blocks_stream_instead_of_attempting_rtsp(
         )
 
         cameras = window._camera_repository.list_by_nvr(nvr.id)  # type: ignore[arg-type]
-        window._show_camera_stream(cameras[0].id)  # type: ignore[arg-type]
+        window._open_camera_at(cameras[0].id, 0)  # type: ignore[arg-type]
 
-        assert window._video_tile is None, "no stream may be opened without a password"
+        assert window.video_grid.tile_at(0) is None, (
+            "no stream may be opened without a password"
+        )
         assert warned and "senha" in warned[0].lower()
     finally:
         window.close()

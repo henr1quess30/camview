@@ -84,11 +84,24 @@ src/camview/
 Em desenvolvimento incremental. Veja [PLAN.md](PLAN.md) para o roteiro
 completo de fases e o que já foi concluído.
 
-Fase atual: **Fase 3 concluída** — reprodução RTSP real funcionando
-(validada contra um NVR Hikvision com stream H.265 1080p), com uma célula
-de vídeo por vez: duplo clique numa câmera da árvore abre o stream, com
-indicador de status, mensagem de erro e reconexão automática com backoff.
-O mosaico com várias células vem na Fase 4.
+Fase atual: **Fase 4 concluída** — mosaico funcionando, validado contra
+um NVR Hikvision real com até 16 streams simultâneos.
+
+Como usar hoje:
+
+- Menu **NVR → Adicionar NVR...** para cadastrar um equipamento (os canais
+  são gerados automaticamente).
+- **Duplo clique** numa câmera da árvore lateral abre o stream na primeira
+  célula livre; ou **arraste** a câmera para uma célula específica.
+- **Arraste** uma célula sobre outra para trocá-las de posição.
+- **Duplo clique** numa célula maximiza; **duplo clique** de novo ou **Esc**
+  volta ao mosaico.
+- O seletor na barra superior alterna entre **1x1, 2x2, 3x3 e 4x4**.
+
+Mosaicos usam substream automaticamente (menos banda e CPU); a grade 1x1
+respeita o stream padrão configurado no NVR.
+
+Salvar e restaurar layouts vem na Fase 5.
 
 ### Nota sobre Wayland
 
