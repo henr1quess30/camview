@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "camview"
+version = "0.1.0"
+description = "Lightweight NVR/camera live-viewing client (mosaic video wall) for Linux desktops."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "CamView contributors" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: POSIX :: Linux",
+    "Environment :: X11 Applications :: Qt",
+    "Topic :: Multimedia :: Video",
+    "License :: OSI Approved :: MIT License",
+]
+dependencies = [
+    "PySide6>=6.7",
+    "python-vlc>=3.0.20123",
+    "keyring>=25.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+camview = "camview.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/camview"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

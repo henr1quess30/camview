@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editors / IDE
+.vscode/
+.idea/
+*.swp
+
+# CamView runtime data (local dev DB, logs)
+*.db
+*.db-journal
+*.log
+
+# OS
+.DS_Store
