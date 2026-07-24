@@ -115,11 +115,15 @@ de vídeo, então a criação do vout falhava. Corrigido com
 
 ### Validação real
 
-Testado contra um NVR Hikvision real: stream H.265 1080p conectado,
-decodificado e renderizado. Comprovado via `video_take_snapshot()` do
-próprio libVLC — frame de 1920x1080 com ~44 mil cores únicas (imagem
-real, não tela preta). O roteamento do duplo clique (árvore → câmera
-correta → URL correta) também foi verificado.
+Testado contra dois NVRs Hikvision reais:
+
+- **Célula isolada:** stream H.265 1080p conectado, decodificado e
+  renderizado. Comprovado via `video_take_snapshot()` do próprio libVLC
+  — frame de 1920x1080 com ~44 mil cores únicas (imagem real).
+- **Fluxo completo pelo `MainWindow`:** duplo clique numa câmera da
+  árvore abriu o stream correto (`Canal 1`), chegou a `PLAYING` com
+  vídeo 720p na primeira tentativa, **zero** falhas de autenticação, e
+  o player foi corretamente liberado ao fechar a célula.
 
 **Ruído benigno conhecido:** o libVLC 3.x sonda caminhos de hardware na
 inicialização e loga `glconv_vaapi_x11 gl error: vaDeriveImage` /
@@ -128,12 +132,13 @@ reprodução funciona apesar dessas mensagens. Roteá-las para o `logging`
 do Python (via `libvlc_log_set`) fica como melhoria futura — exige lidar
 com `va_list` por ctypes.
 
-**Pendente de reverificação:** o fluxo completo pelo `MainWindow`
-(duplo clique → tile reproduzindo) não pôde ser confirmado ao final
-porque o NVR passou a recusar sessões — bloqueio por tentativas de login
-inválidas, causado por um bug no *script de teste* (monkeypatch da senha
-no módulo errado, gerando tentativas com senha vazia). O CamView em si
-nunca envia senha vazia. Reverificar quando o bloqueio expirar.
+**Lição aprendida (proteção adicionada):** durante os testes, um bug no
+*script de teste* (monkeypatch da senha no módulo errado) gerou
+tentativas com senha vazia, e o NVR bloqueou o IP de origem — comportamento
+padrão dos Hikvision após algumas falhas de login. Para evitar que isso
+aconteça com usuários reais, `_show_camera_stream()` agora recusa abrir
+o stream quando não há senha armazenada, exibindo uma mensagem clara em
+vez de tentar autenticar. Coberto por teste de regressão.
 
 ## Fase 4 — Mosaico
 
