@@ -48,6 +48,17 @@ pip install -e ".[dev]"
 python -m camview
 ```
 
+### Atalho no menu do KDE
+
+Para abrir o CamView pelo menu de aplicativos, sem terminal:
+
+```bash
+./scripts/install-desktop-entry.sh
+```
+
+O script aponta o atalho para o Python do virtualenv deste checkout, então
+não é preciso ativar o ambiente antes de abrir.
+
 ## Desenvolvimento
 
 Rodar os testes:
