@@ -309,15 +309,25 @@ class MainWindow(QMainWindow):
         position: int,
         stream_type: StreamType,
     ) -> None:
-        url = build_channel_url(
-            host=nvr.host,
-            port=nvr.rtsp_port,
-            username=nvr.username,
-            password=password,
-            channel_number=camera.channel_number,
+        # Both URLs are built up front so the tile can switch streams on
+        # maximize without another keyring lookup.
+        stream_urls = {
+            candidate: build_channel_url(
+                host=nvr.host,
+                port=nvr.rtsp_port,
+                username=nvr.username,
+                password=password,
+                channel_number=camera.channel_number,
+                stream_type=candidate,
+            )
+            for candidate in StreamType
+        }
+        tile = VideoTile(
+            title=camera.name,
+            stream_urls=stream_urls,
             stream_type=stream_type,
+            camera_id=camera.id,
         )
-        tile = VideoTile(title=camera.name, url=url, camera_id=camera.id)
         self.video_grid.place_tile(position, tile)
 
     def _open_camera_at(self, camera_id: int, position: int) -> None:

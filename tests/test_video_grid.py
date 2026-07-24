@@ -11,13 +11,25 @@ from fakes import FakeInstance
 from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QApplication
 
+from camview.models.camera import StreamType
 from camview.ui.widgets.video_grid import GRID_SHAPES, VideoGrid
 from camview.ui.widgets.video_tile import VideoTile
 
 
+STREAM_URLS = {
+    StreamType.MAIN: "rtsp://example.invalid/Streaming/Channels/101",
+    StreamType.SUB: "rtsp://example.invalid/Streaming/Channels/102",
+}
+
+
 def make_tile(name: str = "Canal", camera_id: int = 1) -> VideoTile:
     """A tile that has not connected yet (its deferred timer has not fired)."""
-    return VideoTile(title=name, url="rtsp://example.invalid/101", camera_id=camera_id)
+    return VideoTile(
+        title=name,
+        stream_urls=STREAM_URLS,
+        stream_type=StreamType.SUB,
+        camera_id=camera_id,
+    )
 
 
 def place_connected_tile(
@@ -408,3 +420,103 @@ class TestPositionAt:
 
         assert grid.position_at(QPoint(5000, 5000)) is None
         grid.close()
+
+
+class TestStreamSwitchOnMaximize:
+    """A mosaic-sized substream looks soft filling the window, so maximizing
+    steps up to the main stream and restoring steps back down."""
+
+    def test_maximize_switches_to_main_stream(
+        self, qapp: QApplication, fake_instance: FakeInstance
+    ) -> None:
+        grid = VideoGrid()
+        tile = place_connected_tile(grid, 0)
+        assert tile.stream_type is StreamType.SUB
+
+        grid.maximize(0)
+
+        assert tile.stream_type is StreamType.MAIN
+        assert tile.url == STREAM_URLS[StreamType.MAIN]
+
+    def test_restore_returns_to_the_mosaic_stream(
+        self, qapp: QApplication, fake_instance: FakeInstance
+    ) -> None:
+        grid = VideoGrid()
+        tile = place_connected_tile(grid, 0)
+
+        grid.maximize(0)
+        grid.restore()
+
+        assert tile.stream_type is StreamType.SUB
+        assert tile.url == STREAM_URLS[StreamType.SUB]
+
+    def test_switching_reuses_the_same_player(
+        self, qapp: QApplication, fake_instance: FakeInstance
+    ) -> None:
+        """Swapping media must not leak or recreate the VLC player."""
+        grid = VideoGrid()
+        place_connected_tile(grid, 0)
+
+        grid.maximize(0)
+        grid.restore()
+
+        assert len(fake_instance.players) == 1
+        assert fake_instance.players[0].released is False
+
+    def test_maximize_plays_the_main_stream_url(
+        self, qapp: QApplication, fake_instance: FakeInstance
+    ) -> None:
+        grid = VideoGrid()
+        place_connected_tile(grid, 0)
+
+        grid.maximize(0)
+
+        url, _options = fake_instance.players[0].media
+        assert url == STREAM_URLS[StreamType.MAIN]
+
+    def test_a_main_stream_tile_is_left_alone(
+        self, qapp: QApplication, fake_instance: FakeInstance
+    ) -> None:
+        """1x1 grids already use the NVR default, so there is nothing to switch."""
+        grid = VideoGrid(rows=1, columns=1)
+        tile = VideoTile(
+            title="Canal", stream_urls=STREAM_URLS, stream_type=StreamType.MAIN
+        )
+        grid.place_tile(0, tile)
+        tile._connect()
+
+        grid.maximize(0)
+        assert tile.stream_type is StreamType.MAIN
+
+        grid.restore()
+        assert tile.stream_type is StreamType.MAIN
+
+    def test_tile_without_a_main_url_stays_on_its_substream(
+        self, qapp: QApplication, fake_instance: FakeInstance
+    ) -> None:
+        grid = VideoGrid()
+        tile = VideoTile(
+            title="Canal",
+            stream_urls={StreamType.SUB: STREAM_URLS[StreamType.SUB]},
+            stream_type=StreamType.SUB,
+        )
+        grid.place_tile(0, tile)
+        tile._connect()
+
+        grid.maximize(0)
+
+        assert tile.stream_type is StreamType.SUB
+
+    def test_removing_a_maximized_tile_forgets_its_saved_stream(
+        self, qapp: QApplication, fake_instance: FakeInstance
+    ) -> None:
+        grid = VideoGrid()
+        place_connected_tile(grid, 0)
+        grid.maximize(0)
+
+        grid.remove_tile(0)
+        new_tile = place_connected_tile(grid, 0)
+        grid.maximize(0)
+        grid.restore()
+
+        assert new_tile.stream_type is StreamType.SUB

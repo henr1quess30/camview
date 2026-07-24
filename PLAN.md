@@ -163,6 +163,12 @@ restaurar com duplo clique ou Esc. Borda discreta na célula selecionada.
   (requisito de desempenho — 16 streams principais seriam banda e
   decodificação desnecessárias para uma célula pequena). Grade 1x1
   respeita o `default_stream` do NVR. A Fase 5 torna isso por célula.
+- **Troca de stream ao maximizar:** o substream que serve bem numa célula
+  pequena fica visivelmente borrado ocupando a janela inteira, então
+  maximizar sobe para o stream principal e restaurar volta ao anterior.
+  Cada tile guarda as duas URLs desde a criação, evitando uma nova
+  consulta ao keyring a cada maximização. Verificado no equipamento
+  real: 640x360 no mosaico → 1280x720 maximizado → 640x360 ao restaurar.
 - **Limpeza:** reduzir a grade fecha e libera os players das células que
   deixaram de existir; fechar a janela libera todos.
 

@@ -108,7 +108,9 @@ Como usar hoje:
   célula livre; ou **arraste** a câmera para uma célula específica.
 - **Arraste** uma célula sobre outra para trocá-las de posição.
 - **Duplo clique** numa célula maximiza; **duplo clique** de novo ou **Esc**
-  volta ao mosaico.
+  volta ao mosaico. Ao maximizar, a câmera troca automaticamente para o
+  stream principal (mais nitidez na tela cheia) e volta ao substream ao
+  restaurar.
 - O seletor na barra superior alterna entre **1x1, 2x2, 3x3 e 4x4**.
 
 Mosaicos usam substream automaticamente (menos banda e CPU); a grade 1x1

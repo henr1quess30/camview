@@ -11,6 +11,7 @@ connected slots, on the GUI thread.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from camview.models.camera import StreamType
 from camview.services.reconnect import ReconnectBackoff
 from camview.services.stream_manager import (
     PlaybackOptions,
@@ -71,14 +73,18 @@ class VideoTile(QWidget):
     def __init__(
         self,
         title: str,
-        url: str,
+        stream_urls: Mapping[StreamType, str],
+        stream_type: StreamType = StreamType.SUB,
         playback_options: PlaybackOptions | None = None,
         camera_id: int | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        if stream_type not in stream_urls:
+            raise ValueError(f"no URL provided for stream type {stream_type}")
         self.title = title
-        self.url = url
+        self._stream_urls = dict(stream_urls)
+        self.stream_type = stream_type
         self.camera_id = camera_id
         #: Set by VideoGrid when the tile is placed; ``None`` when unplaced.
         self.grid_position: int | None = None
@@ -242,6 +248,34 @@ class VideoTile(QWidget):
             ConnectionStatus.ERROR, f"{message}\nReconectando em {delay}s..."
         )
         self._reconnect_timer.start(delay * 1000)
+
+    @property
+    def url(self) -> str:
+        """RTSP URL currently being played."""
+        return self._stream_urls[self.stream_type]
+
+    def set_stream_type(self, stream_type: StreamType) -> None:
+        """Switch between main and sub stream, restarting playback.
+
+        Used when a cell is maximized: the substream that looks fine in a
+        small mosaic cell is visibly soft filling the window, so the tile
+        moves up to the main stream and back down again on restore.
+
+        Silently ignores stream types this tile has no URL for.
+        """
+        if stream_type == self.stream_type or stream_type not in self._stream_urls:
+            return
+
+        logger.debug(
+            "Tile '%s' switching from %s to %s stream",
+            self.title,
+            self.stream_type.value,
+            stream_type.value,
+        )
+        self.stream_type = stream_type
+        self._backoff.reset()
+        self._reconnect_timer.stop()
+        self._connect()
 
     def set_selected(self, selected: bool) -> None:
         """Draw (or clear) the discreet border marking the focused tile.

@@ -13,6 +13,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
 from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QVBoxLayout, QWidget
 
+from camview.models.camera import StreamType
 from camview.ui.widgets.device_tree import CAMERA_MIME_TYPE
 from camview.ui.widgets.video_tile import GRID_POSITION_MIME_TYPE, VideoTile
 
@@ -69,6 +70,8 @@ class VideoGrid(QWidget):
         self._empty_cells: dict[int, _EmptyCell] = {}
         self._selected_position: int | None = None
         self._maximized_position: int | None = None
+        #: Stream each tile used before being maximized, to restore it after.
+        self._mosaic_stream_types: dict[int, StreamType] = {}
 
         self._layout = QGridLayout(self)
         self._layout.setContentsMargins(4, 4, 4, 4)
@@ -170,6 +173,7 @@ class VideoGrid(QWidget):
             self._maximized_position = None
         if self._selected_position == position:
             self._selected_position = None
+        self._mosaic_stream_types.pop(position, None)
 
         tile.close_stream()
         tile.setParent(None)
@@ -243,6 +247,10 @@ class VideoGrid(QWidget):
             return
 
         self._maximized_position = position
+        # Filling the window with a mosaic-sized substream looks soft, so
+        # step up to the main stream while the cell is enlarged.
+        self._mosaic_stream_types.setdefault(position, tile.stream_type)
+        tile.set_stream_type(StreamType.MAIN)
 
         while self._layout.count():
             self._layout.takeAt(0)
@@ -260,6 +268,12 @@ class VideoGrid(QWidget):
         """Undo :meth:`maximize`, showing the full mosaic again."""
         if self._maximized_position is None:
             return
+
+        restored = self._tiles.get(self._maximized_position)
+        previous = self._mosaic_stream_types.pop(self._maximized_position, None)
+        if restored is not None and previous is not None:
+            restored.set_stream_type(previous)
+
         self._maximized_position = None
         for tile in self._tiles.values():
             tile.show()

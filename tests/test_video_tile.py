@@ -14,12 +14,18 @@ import vlc
 from fakes import FakeInstance
 from PySide6.QtWidgets import QApplication
 
+from camview.models.camera import StreamType
 from camview.services.stream_manager import PlaybackOptions, VlcUnavailableError
 from camview.ui.widgets.video_tile import ConnectionStatus, VideoTile
 
 
-def make_tile(qapp: QApplication, url: str = "rtsp://example.invalid/101") -> VideoTile:
-    return VideoTile(title="Canal 1", url=url)
+SUB_URL = "rtsp://example.invalid/Streaming/Channels/102"
+MAIN_URL = "rtsp://example.invalid/Streaming/Channels/101"
+STREAM_URLS = {StreamType.SUB: SUB_URL, StreamType.MAIN: MAIN_URL}
+
+
+def make_tile(qapp: QApplication, url: str = SUB_URL) -> VideoTile:
+    return VideoTile(title="Canal 1", stream_urls={StreamType.SUB: url})
 
 
 class TestInitialState:
@@ -62,13 +68,13 @@ class TestConnect:
     ) -> None:
         tile = VideoTile(
             title="Canal 1",
-            url="rtsp://example.invalid/101",
+            stream_urls={StreamType.SUB: SUB_URL},
             playback_options=PlaybackOptions(network_caching_ms=500, mute_audio=False),
         )
         tile._connect()
 
         url, options = fake_instance.players[0].media
-        assert url == "rtsp://example.invalid/101"
+        assert url == SUB_URL
         assert "network-caching=500" in options
         assert "no-audio" not in options
         tile.close_stream()
@@ -190,7 +196,7 @@ class TestCloseStream:
     def test_safe_to_call_before_any_connect_attempt(
         self, qapp: QApplication, fake_instance: FakeInstance
     ) -> None:
-        tile = VideoTile(title="Canal 1", url="rtsp://example.invalid/101")
+        tile = VideoTile(title="Canal 1", stream_urls={StreamType.SUB: SUB_URL})
         tile.close_stream()  # must not raise
 
 
