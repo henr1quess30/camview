@@ -13,7 +13,7 @@ validada antes de avançar para a próxima.
 
 - [x] Fase 0 — Scaffold & janela vazia
 - [x] Fase 1 — Persistência SQLite
-- [ ] Fase 2 — Cadastro de NVR e geração de canais Hikvision
+- [x] Fase 2 — Cadastro de NVR e geração de canais Hikvision
 - [ ] Fase 3 — Célula de vídeo única
 - [ ] Fase 4 — Mosaico
 - [ ] Fase 5 — Layouts salvos
@@ -45,14 +45,29 @@ os repositórios já precisavam de tipos concretos): dataclasses `Nvr`,
 `~/.local/share/camview/camview.db` automaticamente no primeiro uso —
 validado rodando o app de verdade.
 
-## Fase 2 — Cadastro de NVR e geração de canais Hikvision
+## Fase 2 — Cadastro de NVR e geração de canais Hikvision ✅
 
-`services/credentials.py` como wrapper do `keyring` (senha nunca em texto puro no SQLite).
+`services/credentials.py` como wrapper do `keyring` (senha nunca em texto puro
+no SQLite; falha do keyring vira `CredentialsError`, tratada na UI).
 `services/rtsp.py::build_channel_url()` — função pura e testável que gera
-URLs no padrão Hikvision (`101`, `102`, `201`, `202`, ...) a partir de
-canal + tipo de stream, sem persistir a senha na URL salva.
-Diálogo de cadastro/edição de NVR com teste de conexão. `DeviceTree` da
-sidebar populada a partir do banco.
+URLs no padrão Hikvision (`101`, `102`, `201`, `202`, ...) a partir de canal +
+tipo de stream, com escape de caracteres especiais em usuário/senha; nunca
+persiste a senha em disco. `generate_missing_channel_cameras()` gera os
+registros de câmera para os canais que ainda não existem (usado tanto no
+cadastro inicial quanto ao aumentar `channel_count` numa edição, sem apagar
+canais existentes). `services/connectivity.py::check_tcp_connection()` —
+teste de alcançabilidade TCP (sem negociação RTSP real, que é Fase 3).
+
+`NvrDialog` (nome, host, porta, usuário, senha, quantidade de canais, stream
+padrão) com botão "Testar conexão" rodando em `QThread` para não bloquear a
+UI. `DeviceTree` populada a partir do banco (NVR → câmeras), com menu de
+contexto para editar/remover cada NVR, integrado ao `MainWindow` (menu NVR →
+Adicionar).
+
+Bug real encontrado pelos testes de integração e corrigido: o `QComboBox` de
+stream padrão perdia o tipo `StreamType` ao ler `currentData()` (o Qt
+devolvia a `str` "crua" por `StreamType` herdar de `str`) — corrigido
+reconstruindo o enum explicitamente em `NvrDialog.result_nvr()`.
 
 ## Fase 3 — Célula de vídeo única
 

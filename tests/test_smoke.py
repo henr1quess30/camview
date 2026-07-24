@@ -2,22 +2,17 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 from PySide6.QtWidgets import QApplication
 
 from camview.ui.main_window import MainWindow
 
 
-def _get_application() -> QApplication:
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
-
-
-def test_main_window_constructs() -> None:
-    _get_application()
-
-    window = MainWindow()
+def test_main_window_constructs(
+    qapp: QApplication, db_connection: sqlite3.Connection
+) -> None:
+    window = MainWindow(connection=db_connection)
     try:
         assert window.windowTitle() == "CamView"
         assert window.device_tree is not None

@@ -1,7 +1,8 @@
 """CamView's main window: sidebar, mosaic area, toolbar, status bar.
 
-This is the Phase 0 shell — the sidebar tree, mosaic grid, and layout
-selector are wired up for real in later phases (2, 4).
+The mosaic grid and layout selector are still placeholders — wired up
+for real in Phase 4. NVR registration (sidebar tree, add/edit/remove)
+is real as of Phase 2.
 """
 
 from __future__ import annotations
@@ -13,14 +14,27 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
     QDockWidget,
     QLabel,
     QMainWindow,
+    QMenu,
+    QMessageBox,
     QToolBar,
-    QTreeWidget,
     QVBoxLayout,
     QWidget,
 )
+
+from camview.database.repositories import CameraRepository, NvrRepository
+from camview.services.credentials import (
+    CredentialsError,
+    delete_nvr_password,
+    get_nvr_password,
+    set_nvr_password,
+)
+from camview.services.rtsp import generate_missing_channel_cameras
+from camview.ui.dialogs.nvr_dialog import NvrDialog
+from camview.ui.widgets.device_tree import NVR_ID_ROLE, DeviceTree
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +46,15 @@ class MainWindow(QMainWindow):
 
     def __init__(
         self,
-        connection: sqlite3.Connection | None = None,
+        connection: sqlite3.Connection,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("CamView")
         self.resize(1280, 800)
         self._connection = connection
+        self._nvr_repository = NvrRepository(connection)
+        self._camera_repository = CameraRepository(connection)
 
         self._build_sidebar()
         self._build_central_widget()
@@ -49,8 +65,11 @@ class MainWindow(QMainWindow):
         logger.debug("MainWindow constructed")
 
     def _build_sidebar(self) -> None:
-        self.device_tree = QTreeWidget()
-        self.device_tree.setHeaderLabels(["NVRs / Cameras"])
+        self.device_tree = DeviceTree(self._nvr_repository, self._camera_repository)
+        self.device_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.device_tree.customContextMenuRequested.connect(
+            self._show_device_tree_context_menu
+        )
 
         dock = QDockWidget("Devices", self)
         dock.setObjectName("devicesDock")
@@ -92,5 +111,109 @@ class MainWindow(QMainWindow):
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
 
+        nvr_menu = self.menuBar().addMenu("&NVR")
+
+        add_nvr_action = QAction("&Adicionar NVR...", self)
+        add_nvr_action.triggered.connect(self._add_nvr)
+        nvr_menu.addAction(add_nvr_action)
+
     def _build_statusbar(self) -> None:
         self.statusBar().showMessage("Ready")
+
+    def _show_device_tree_context_menu(self, position: object) -> None:
+        item = self.device_tree.itemAt(position)  # type: ignore[arg-type]
+        if item is None or item.parent() is not None:
+            return  # Only top-level (NVR) items have a context menu for now.
+
+        nvr_id = item.data(0, NVR_ID_ROLE)
+
+        menu = QMenu(self)
+        edit_action = menu.addAction("Editar...")
+        remove_action = menu.addAction("Remover")
+        chosen = menu.exec(self.device_tree.viewport().mapToGlobal(position))  # type: ignore[arg-type]
+        if chosen is edit_action:
+            self._edit_nvr(nvr_id)
+        elif chosen is remove_action:
+            self._remove_nvr(nvr_id)
+
+    def _add_nvr(self) -> None:
+        dialog = NvrDialog(parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        nvr = dialog.result_nvr()
+        password = dialog.result_password()
+        try:
+            created = self._nvr_repository.create(nvr)
+            set_nvr_password(created.id, password)  # type: ignore[arg-type]
+            for camera in generate_missing_channel_cameras(
+                created.id,  # type: ignore[arg-type]
+                created.channel_count,
+            ):
+                self._camera_repository.create(camera)
+        except (CredentialsError, sqlite3.Error) as exc:
+            logger.error("Failed to add NVR: %s", exc)
+            QMessageBox.critical(self, "CamView", str(exc))
+            return
+
+        self.device_tree.refresh()
+        self.statusBar().showMessage(f"NVR '{created.name}' adicionado.", 5000)
+
+    def _edit_nvr(self, nvr_id: int) -> None:
+        existing = self._nvr_repository.get(nvr_id)
+        if existing is None:
+            return
+
+        try:
+            password = get_nvr_password(nvr_id) or ""
+        except CredentialsError as exc:
+            QMessageBox.warning(self, "CamView", str(exc))
+            password = ""
+
+        dialog = NvrDialog(nvr=existing, password=password, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        updated = dialog.result_nvr(existing=existing)
+        try:
+            self._nvr_repository.update(updated)
+            set_nvr_password(nvr_id, dialog.result_password())
+            existing_channels = {
+                camera.channel_number
+                for camera in self._camera_repository.list_by_nvr(nvr_id)
+            }
+            for camera in generate_missing_channel_cameras(
+                nvr_id, updated.channel_count, existing_channels
+            ):
+                self._camera_repository.create(camera)
+        except (CredentialsError, sqlite3.Error) as exc:
+            logger.error("Failed to update NVR %d: %s", nvr_id, exc)
+            QMessageBox.critical(self, "CamView", str(exc))
+            return
+
+        self.device_tree.refresh()
+        self.statusBar().showMessage(f"NVR '{updated.name}' atualizado.", 5000)
+
+    def _remove_nvr(self, nvr_id: int) -> None:
+        nvr = self._nvr_repository.get(nvr_id)
+        if nvr is None:
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "CamView",
+            f"Remover o NVR '{nvr.name}' e todas as suas câmeras?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            self._nvr_repository.delete(nvr_id)
+            delete_nvr_password(nvr_id)
+        except (CredentialsError, sqlite3.Error) as exc:
+            logger.error("Failed to remove NVR %d: %s", nvr_id, exc)
+            QMessageBox.critical(self, "CamView", str(exc))
+            return
+
+        self.device_tree.refresh()
+        self.statusBar().showMessage(f"NVR '{nvr.name}' removido.", 5000)

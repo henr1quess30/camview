@@ -74,9 +74,11 @@ src/camview/
 Em desenvolvimento incremental. Veja [PLAN.md](PLAN.md) para o roteiro
 completo de fases e o que já foi concluído.
 
-Fase atual: **Fase 1 concluída** — persistência SQLite (schema, migrações,
-repositórios com CRUD) além da estrutura do projeto e janela principal
-funcional. Ainda sem cadastro de NVR, streams ou mosaico.
+Fase atual: **Fase 2 concluída** — cadastro/edição/remoção de NVRs com
+geração automática dos canais Hikvision, senha armazenada via `keyring`
+(nunca em texto puro no banco), teste de conexão TCP em segundo plano, e
+sidebar populada a partir do banco. Ainda sem reprodução RTSP real ou
+mosaico.
 
 ## Licença
 
