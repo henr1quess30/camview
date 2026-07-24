@@ -16,11 +16,21 @@ sudo pacman -S python python-pip vlc
 
 Notas sobre essas dependências, confirmadas em ambiente real:
 
-- O pacote `vlc` traz consigo a `libvlc` e os codecs comuns — é o jeito
-  recomendado de garantir suporte a H.264/H.265. Se `libvlc` já estiver
-  instalada isoladamente (por outra dependência), o `python-vlc` já
-  funciona, mas instalar `vlc` continua sendo a forma mais confiável de
-  obter os codecs junto.
+- **Instale o pacote `vlc` completo, não apenas `libvlc`.** No Arch, o
+  `libvlc` sozinho **não reproduz RTSP** — os plugins essenciais são
+  pacotes separados. Se você só tem `libvlc`, precisa no mínimo de:
+
+  ```bash
+  sudo pacman -S vlc-plugin-live555 vlc-plugin-ffmpeg vlc-plugins-video-output
+  ```
+
+  - `vlc-plugin-live555` — transporte RTSP. Sem ele o VLC tenta os
+    módulos `satip`/`realrtsp` e a conexão falha sempre.
+  - `vlc-plugin-ffmpeg` — decodificação H.264/H.265.
+  - `vlc-plugins-video-output` — os módulos de saída de vídeo. Sem ele
+    não há nenhuma saída disponível.
+
+  Instalar `vlc` resolve tudo de uma vez e é o caminho recomendado.
 - O pacote `python` do Arch **não inclui pip/ensurepip**. `python -m venv`
   funciona sem `python-pip`, mas o `pip` dentro do venv não bootstrap
   sozinho — por isso `python-pip` precisa estar instalado no sistema antes
@@ -74,11 +84,17 @@ src/camview/
 Em desenvolvimento incremental. Veja [PLAN.md](PLAN.md) para o roteiro
 completo de fases e o que já foi concluído.
 
-Fase atual: **Fase 2 concluída** — cadastro/edição/remoção de NVRs com
-geração automática dos canais Hikvision, senha armazenada via `keyring`
-(nunca em texto puro no banco), teste de conexão TCP em segundo plano, e
-sidebar populada a partir do banco. Ainda sem reprodução RTSP real ou
-mosaico.
+Fase atual: **Fase 3 concluída** — reprodução RTSP real funcionando
+(validada contra um NVR Hikvision com stream H.265 1080p), com uma célula
+de vídeo por vez: duplo clique numa câmera da árvore abre o stream, com
+indicador de status, mensagem de erro e reconexão automática com backoff.
+O mosaico com várias células vem na Fase 4.
+
+### Nota sobre Wayland
+
+O libVLC 3.x só sabe embutir vídeo em janela X11. Em sessão Wayland
+nativa isso falha, então o CamView força `QT_QPA_PLATFORM=xcb` no
+startup e roda via XWayland. Isso é automático — nada a configurar.
 
 ## Licença
 

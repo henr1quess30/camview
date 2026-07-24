@@ -122,3 +122,37 @@ def test_remove_nvr_deletes_row_password_and_tree_entry(
         assert window.device_tree.topLevelItemCount() == 0
     finally:
         window.close()
+
+
+def test_empty_password_blocks_stream_instead_of_attempting_rtsp(
+    qapp: QApplication,
+    db_connection: sqlite3.Connection,
+    fake_keyring: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing keyring entry must not burn auth attempts against the NVR.
+
+    Hikvision devices lock out the source IP after a few failed logins,
+    so an empty password has to fail in the UI, before any RTSP connect.
+    """
+    window = MainWindow(connection=db_connection)
+    try:
+        nvr = window._nvr_repository.create(
+            Nvr(name="SemSenha", host="192.0.2.30", username="admin", channel_count=1)
+        )
+        for camera in generate_missing_channel_cameras(nvr.id, 1):  # type: ignore[arg-type]
+            window._camera_repository.create(camera)
+        # deliberately no set_nvr_password() call
+
+        warned: list[str] = []
+        monkeypatch.setattr(
+            QMessageBox, "warning", lambda *a, **k: warned.append(a[2])
+        )
+
+        cameras = window._camera_repository.list_by_nvr(nvr.id)  # type: ignore[arg-type]
+        window._show_camera_stream(cameras[0].id)  # type: ignore[arg-type]
+
+        assert window._video_tile is None, "no stream may be opened without a password"
+        assert warned and "senha" in warned[0].lower()
+    finally:
+        window.close()

@@ -14,7 +14,7 @@ validada antes de avançar para a próxima.
 - [x] Fase 0 — Scaffold & janela vazia
 - [x] Fase 1 — Persistência SQLite
 - [x] Fase 2 — Cadastro de NVR e geração de canais Hikvision
-- [ ] Fase 3 — Célula de vídeo única
+- [x] Fase 3 — Célula de vídeo única
 - [ ] Fase 4 — Mosaico
 - [ ] Fase 5 — Layouts salvos
 - [ ] Fase 6 — Restauração de estado ao abrir
@@ -69,20 +69,71 @@ stream padrão perdia o tipo `StreamType` ao ler `currentData()` (o Qt
 devolvia a `str` "crua" por `StreamType` herdar de `str`) — corrigido
 reconstruindo o enum explicitamente em `NvrDialog.result_nvr()`.
 
-## Fase 3 — Célula de vídeo única
+## Fase 3 — Célula de vídeo única ✅
 
 Instância global única de `vlc.Instance` (lazy, construída sob demanda) em
 `services/stream_manager.py`. `VideoTile` com um `vlc.MediaPlayer` próprio,
 indicador de status de conexão, mensagem de falha, botão de fechar.
-Conexão/reconexão rodando fora da thread da GUI (worker dedicado), com
-backoff exponencial (2s → 5s → 10s → máx. 30s). Opções de baixa latência
-configuráveis (`--network-caching`, `--rtsp-tcp`, `--no-audio`).
+Reconexão com backoff (2s → 5s → 10s → máx. 30s) via `ReconnectBackoff`
+(`services/reconnect.py`), agendada por `QTimer` — a conexão em si é
+assíncrona dentro do libVLC, então nada bloqueia a thread da GUI. Opções
+de baixa latência por stream (`network-caching`, `rtsp-tcp`, `no-audio`)
+em `PlaybackOptions`.
 
-**Risco conhecido:** libVLC 3.0.x embute vídeo via handle X11
-(`libvlc_media_player_set_xwindow`). Em sessão Wayland pura, `widget.winId()`
-do Qt não é um X11 window id — só funciona hoje via XWayland. Esta fase
-precisa de um spike para validar o embedding real nesta máquina e documentar
-um fallback (ex.: callback de vídeo/vmem) caso necessário.
+### Resolução do risco Wayland/X11
+
+Confirmado empiricamente: em sessão **Wayland nativa** o libVLC 3.0.x
+falha completamente (`video output creation failed`), pois embute vídeo
+por handle X11 e `winId()` do Qt devolve um `wl_surface`. **Solução
+adotada:** `os.environ.setdefault("QT_QPA_PLATFORM", "xcb")` em
+`__main__.py`, antes de qualquer import do PySide6 — o app inteiro roda
+via XWayland e o embedding funciona. Não foi necessário fallback por
+callback de vídeo/vmem.
+
+### Dependências de sistema descobertas (críticas)
+
+O pacote `libvlc` do Arch **sozinho não reproduz RTSP**. Faltavam três
+pacotes, todos descobertos ao testar contra um NVR real:
+
+- `vlc-plugin-live555` — transporte RTSP. Sem ele o libVLC cai nos
+  módulos `satip`/`realrtsp` e falha sempre.
+- `vlc-plugin-ffmpeg` — decodificação H.264/H.265.
+- `vlc-plugins-video-output` — os módulos de saída de vídeo (`xcb_x11`
+  etc.). Sem ele **nenhuma** saída existe.
+
+Instalar o pacote `vlc` traz todos. Isso invalidou um spike inicial meu:
+como nenhum módulo de vout existia, todos os valores de `--vout` que
+testei falhavam de forma idêntica, o que me levou a escolher um nome de
+módulo inexistente (`x11`). O correto é `xcb_x11`.
+
+### Bug de design encontrado e corrigido
+
+O `QStackedLayout` do `VideoTile` escondia o widget de vídeo enquanto
+exibia "Conectando...". Um widget X11 não-mapeado não pode receber saída
+de vídeo, então a criação do vout falhava. Corrigido com
+`StackingMode.StackAll`, que mantém todas as páginas mapeadas.
+
+### Validação real
+
+Testado contra um NVR Hikvision real: stream H.265 1080p conectado,
+decodificado e renderizado. Comprovado via `video_take_snapshot()` do
+próprio libVLC — frame de 1920x1080 com ~44 mil cores únicas (imagem
+real, não tela preta). O roteamento do duplo clique (árvore → câmera
+correta → URL correta) também foi verificado.
+
+**Ruído benigno conhecido:** o libVLC 3.x sonda caminhos de hardware na
+inicialização e loga `glconv_vaapi_x11 gl error: vaDeriveImage` /
+`video output creation failed` antes de cair para software. A
+reprodução funciona apesar dessas mensagens. Roteá-las para o `logging`
+do Python (via `libvlc_log_set`) fica como melhoria futura — exige lidar
+com `va_list` por ctypes.
+
+**Pendente de reverificação:** o fluxo completo pelo `MainWindow`
+(duplo clique → tile reproduzindo) não pôde ser confirmado ao final
+porque o NVR passou a recusar sessões — bloqueio por tentativas de login
+inválidas, causado por um bug no *script de teste* (monkeypatch da senha
+no módulo errado, gerando tentativas com senha vazia). O CamView em si
+nunca envia senha vazia. Reverificar quando o bloqueio expirar.
 
 ## Fase 4 — Mosaico
 
