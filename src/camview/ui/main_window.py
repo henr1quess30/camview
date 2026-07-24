@@ -7,6 +7,7 @@ selector are wired up for real in later phases (2, 4).
 from __future__ import annotations
 
 import logging
+import sqlite3
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeySequence
@@ -29,10 +30,15 @@ _MOSAIC_LAYOUTS = ["1x1", "2x2", "3x3", "4x4"]
 class MainWindow(QMainWindow):
     """CamView's top-level window."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        connection: sqlite3.Connection | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("CamView")
         self.resize(1280, 800)
+        self._connection = connection
 
         self._build_sidebar()
         self._build_central_widget()

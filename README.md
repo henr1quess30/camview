@@ -74,8 +74,9 @@ src/camview/
 Em desenvolvimento incremental. Veja [PLAN.md](PLAN.md) para o roteiro
 completo de fases e o que já foi concluído.
 
-Fase atual: **Fase 0 concluída** — estrutura do projeto e janela principal
-funcional (sem cadastro de NVR, streams ou mosaico ainda).
+Fase atual: **Fase 1 concluída** — persistência SQLite (schema, migrações,
+repositórios com CRUD) além da estrutura do projeto e janela principal
+funcional. Ainda sem cadastro de NVR, streams ou mosaico.
 
 ## Licença
 

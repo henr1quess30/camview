@@ -12,7 +12,7 @@ validada antes de avançar para a próxima.
 ## Status
 
 - [x] Fase 0 — Scaffold & janela vazia
-- [ ] Fase 1 — Persistência SQLite
+- [x] Fase 1 — Persistência SQLite
 - [ ] Fase 2 — Cadastro de NVR e geração de canais Hikvision
 - [ ] Fase 3 — Célula de vídeo única
 - [ ] Fase 4 — Mosaico
@@ -31,17 +31,23 @@ funcional (sidebar, área central placeholder, toolbar, status bar),
 `README.md` com instruções para Arch/EndeavourOS, teste de smoke,
 repositório git inicializado.
 
-## Fase 1 — Persistência SQLite
+## Fase 1 — Persistência SQLite ✅
 
 Schema completo via migração versionada (`PRAGMA user_version`):
 `nvrs`, `cameras`, `layouts`, `layout_items`, `settings`. Repositórios
 (`NvrRepository`, `CameraRepository`, `LayoutRepository`, `SettingsRepository`)
 com CRUD. Testes contra banco temporário (sem tocar no banco real do usuário).
 
+Concluída também nesta fase (adiantado em relação ao rascunho original, pois
+os repositórios já precisavam de tipos concretos): dataclasses `Nvr`,
+`Camera`, `Layout`, `LayoutItem` e o enum `StreamType`. `initialize_database()`
+é chamado no startup real do app (`__main__.py`), criando o banco em
+`~/.local/share/camview/camview.db` automaticamente no primeiro uso —
+validado rodando o app de verdade.
+
 ## Fase 2 — Cadastro de NVR e geração de canais Hikvision
 
-Dataclasses `Nvr`, `Camera`, enum `StreamType` (main/sub). `services/credentials.py`
-como wrapper do `keyring` (senha nunca em texto puro no SQLite).
+`services/credentials.py` como wrapper do `keyring` (senha nunca em texto puro no SQLite).
 `services/rtsp.py::build_channel_url()` — função pura e testável que gera
 URLs no padrão Hikvision (`101`, `102`, `201`, `202`, ...) a partir de
 canal + tipo de stream, sem persistir a senha na URL salva.

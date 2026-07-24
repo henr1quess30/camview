@@ -6,8 +6,8 @@ migration whose version is greater than the database's current
 is updated to match. Migrations are only ever appended, never edited
 in place, so a given database's history stays reproducible.
 
-Phase 1 appends migration 1 with the full ``nvrs`` / ``cameras`` /
-``layouts`` / ``layout_items`` / ``settings`` schema.
+Migration 1 creates the full ``nvrs`` / ``cameras`` / ``layouts`` /
+``layout_items`` / ``settings`` schema.
 """
 
 from __future__ import annotations
@@ -27,7 +27,66 @@ class Migration:
     apply: Callable[[sqlite3.Connection], None]
 
 
-MIGRATIONS: list[Migration] = []
+_SCHEMA_V1 = """
+CREATE TABLE nvrs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    host TEXT NOT NULL,
+    rtsp_port INTEGER NOT NULL DEFAULT 554,
+    username TEXT NOT NULL,
+    channel_count INTEGER NOT NULL,
+    default_stream TEXT NOT NULL DEFAULT 'main',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE cameras (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nvr_id INTEGER NOT NULL REFERENCES nvrs (id) ON DELETE CASCADE,
+    channel_number INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (nvr_id, channel_number)
+);
+
+CREATE TABLE layouts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    rows INTEGER NOT NULL,
+    columns INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE layout_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    layout_id INTEGER NOT NULL REFERENCES layouts (id) ON DELETE CASCADE,
+    camera_id INTEGER NOT NULL REFERENCES cameras (id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    stream_type TEXT NOT NULL,
+    UNIQUE (layout_id, position)
+);
+
+CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
+"""
+
+
+def _apply_v1_initial_schema(connection: sqlite3.Connection) -> None:
+    connection.executescript(_SCHEMA_V1)
+
+
+MIGRATIONS: list[Migration] = [
+    Migration(
+        version=1,
+        description="Initial schema: nvrs, cameras, layouts, layout_items, settings",
+        apply=_apply_v1_initial_schema,
+    ),
+]
 
 
 def apply_migrations(connection: sqlite3.Connection) -> None:
