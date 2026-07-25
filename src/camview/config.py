@@ -32,10 +32,12 @@ def get_default_log_dir() -> Path:
 
 @dataclass(frozen=True, slots=True)
 class AppConfig:
-    """Runtime configuration for a CamView session.
+    """Filesystem configuration for a CamView session.
 
-    Only the log directory is wired up so far; playback/reconnect/UI
-    settings are added in Phase 7 once the settings table exists.
+    Deliberately just the paths. Everything the user can change lives in
+    :class:`camview.models.settings.AppSettings`, persisted in the
+    database — this dataclass only carries the log directory through to
+    logging setup, since that has to be configured before the UI exists.
     """
 
     log_dir: Path = field(default_factory=get_default_log_dir)

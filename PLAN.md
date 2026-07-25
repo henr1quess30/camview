@@ -18,7 +18,7 @@ validada antes de avançar para a próxima.
 - [x] Fase 4 — Mosaico
 - [x] Fase 5 — Layouts salvos
 - [x] Fase 6 — Restauração de estado ao abrir
-- [ ] Fase 7 — Tela de configurações
+- [x] Fase 7 — Tela de configurações
 - [ ] Fase 8 — Tratamento de erros
 - [ ] Fase 9 — Polimento de UI
 - [ ] Fase 10 — Testes
@@ -317,12 +317,60 @@ Dois processos separados (reinício de verdade) contra o NVR
 segundo abriu com título, grade, seletor, células e tamanho idênticos e
 **4/4 streams reproduzindo**.
 
-## Fase 7 — Tela de configurações
+## Fase 7 — Tela de configurações ✅
 
-Latência/network caching, transporte RTSP (TCP/UDP), reconexão automática
-e tempo máximo de backoff, iniciar maximizado, abrir último layout, mudo,
-stream padrão (principal/substream), diretório de logs — tudo persistido
-na tabela `settings` e aplicado a players novos/reconectando.
+`AppSettings` (`models/settings.py`) reúne tudo que o usuário pode mudar:
+latência/`network-caching`, transporte RTSP (TCP/UDP), mudo, reconexão
+automática e seu intervalo máximo, stream do mosaico, iniciar maximizado,
+reabrir o último layout e o diretório de logs. `services/settings.py`
+carrega e grava na tabela `settings`; `SettingsDialog` só edita o valor —
+persistir e aplicar é da `MainWindow`, o que deixa o diálogo testável sem
+banco.
+
+### Decisões de implementação
+
+- **Leitura tolerante.** `settings_from_mapping()` nunca levanta exceção:
+  valor inválido cai no padrão e número fora de faixa é limitado. Uma
+  linha editada à mão não pode impedir o app de abrir.
+- **Ausência é o padrão.** Salvar remove as linhas que voltaram ao valor
+  padrão; para o diretório de logs, "sem linha" é justamente o que
+  significa "usar o local padrão".
+- **Aplicação a novas conexões.** As opções vão para o libVLC como opções
+  de mídia, lidas quando o stream começa — então valem para células
+  abertas ou reconectadas dali em diante, não para as que já rodam. A
+  status bar diz isso explicitamente.
+- **Ordem no `__main__`.** O banco é aberto antes do `QApplication`,
+  porque o diretório de logs é uma configuração e o logging é montado
+  junto com a aplicação. Diretório inválido cai no padrão em vez de
+  abortar a inicialização.
+- O combo de stream do mosaico reconstrói o enum explicitamente — mesma
+  armadilha do `StreamType` na Fase 2, já que `MosaicStream` também
+  herda de `str`.
+
+### Correção do mosaico "picotado" (relato do usuário)
+
+O mosaico usa substream por padrão, e vários equipamentos aqui têm o
+substream configurado com taxa de quadros baixa. Medido via ISAPI
+(`/ISAPI/Streaming/channels/<N02>`, campo `maxFrameRate` em centésimos):
+`192.0.2.6` e `198.51.100.206` entregam 10 fps no substream contra 25 no
+principal. Não é bug do app — é configuração do NVR — mas o app precisava
+dar saída. Duas foram adicionadas:
+
+1. **Global:** "Stream do mosaico" nas configurações — substream (padrão),
+   principal, ou seguir o padrão de cada NVR.
+2. **Por célula:** menu de contexto (botão direito) na célula, escolhendo
+   principal ou substream. É por célula porque o motivo é por câmera:
+   uma câmera picotada não deveria obrigar as outras 15 a subir para
+   stream principal. A escolha sobrevive a maximizar/restaurar e é
+   gravada no layout (a Fase 5 já persiste stream por posição).
+
+Validação real no `192.0.2.6`, mosaico 2x2:
+
+| Situação | Resultado |
+|----------|-----------|
+| Substream (padrão) | 4 células a 640x360, **13 fps** |
+| Célula 0 trocada para principal | célula 0 a 1920x1080 **29,8 fps**; vizinhas seguem em 13 fps |
+| Configuração global = principal | 4 células a 1920x1080, **26–30 fps** |
 
 ## Fase 8 — Tratamento de erros
 

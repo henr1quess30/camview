@@ -37,6 +37,7 @@ from camview.database.repositories import (
 from camview.models.camera import Camera, StreamType
 from camview.models.layout import Layout, LayoutItem
 from camview.models.nvr import Nvr
+from camview.models.settings import AppSettings
 from camview.services.credentials import (
     CredentialsError,
     delete_nvr_password,
@@ -45,8 +46,14 @@ from camview.services.credentials import (
 )
 from camview.services.hikvision import DiscoveredChannel
 from camview.services.rtsp import build_channel_url, generate_missing_channel_cameras
+from camview.services.settings import (
+    load_settings,
+    playback_options_for,
+    save_settings,
+)
 from camview.ui.dialogs.layout_dialog import LayoutManagerDialog
 from camview.ui.dialogs.nvr_dialog import NvrDialog
+from camview.ui.dialogs.settings_dialog import SettingsDialog
 from camview.ui.widgets.device_tree import CAMERA_ID_ROLE, NVR_ID_ROLE, DeviceTree
 from camview.ui.widgets.video_grid import GRID_SHAPES, VideoGrid, smallest_shape_for
 from camview.ui.widgets.video_tile import VideoTile
@@ -93,6 +100,7 @@ class MainWindow(QMainWindow):
         self._camera_repository = CameraRepository(connection)
         self._layout_repository = LayoutRepository(connection)
         self._settings_repository = SettingsRepository(connection)
+        self._settings: AppSettings = load_settings(self._settings_repository)
         #: Saved layout currently on screen, if any — the target of "Salvar".
         self._current_layout_id: int | None = None
 
@@ -147,6 +155,12 @@ class MainWindow(QMainWindow):
     def _build_menu(self) -> None:
         file_menu = self.menuBar().addMenu("&File")
 
+        settings_action = QAction("&Configurações...", self)
+        settings_action.setShortcut(QKeySequence.StandardKey.Preferences)
+        settings_action.triggered.connect(self._edit_settings)
+        file_menu.addAction(settings_action)
+        file_menu.addSeparator()
+
         quit_action = QAction("&Quit", self)
         quit_action.setShortcut(QKeySequence.StandardKey.Quit)
         quit_action.triggered.connect(self.close)
@@ -172,6 +186,31 @@ class MainWindow(QMainWindow):
         # Release every libVLC player before the widgets are torn down.
         self.video_grid.clear()
         super().closeEvent(event)
+
+    # ------------------------------------------------------------------
+    # Settings
+    # ------------------------------------------------------------------
+
+    def _edit_settings(self) -> None:
+        dialog = SettingsDialog(self._settings, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        updated = dialog.result_settings()
+        try:
+            save_settings(self._settings_repository, updated)
+        except sqlite3.Error as exc:
+            logger.error("Failed to save settings: %s", exc)
+            QMessageBox.critical(self, "CamView", str(exc))
+            return
+
+        self._settings = updated
+        # Playback settings reach libVLC through media options, which are
+        # read when a stream starts — so they apply to cells opened or
+        # reconnected from now on, not to the ones already running.
+        self.statusBar().showMessage(
+            "Configurações salvas. Valem para as próximas conexões.", 5000
+        )
 
     # ------------------------------------------------------------------
     # Session state (window geometry, grid, last layout)
@@ -222,11 +261,15 @@ class MainWindow(QMainWindow):
         if state is not None:
             self.restoreState(state)
 
+        if self._settings.start_maximized:
+            self.setWindowState(self.windowState() | Qt.WindowState.WindowMaximized)
+
         shape = GRID_SHAPES.get(settings.get(SETTING_GRID_SHAPE, ""))
         if shape is not None:
             self._apply_grid_shape(*shape)
 
-        self._restore_last_layout(settings.get(SETTING_LAST_LAYOUT_ID))
+        if self._settings.restore_last_layout:
+            self._restore_last_layout(settings.get(SETTING_LAST_LAYOUT_ID))
 
     def _restore_last_layout(self, raw_layout_id: str | None) -> None:
         """Reopen the layout from last time, if it is still there."""
@@ -636,6 +679,9 @@ class MainWindow(QMainWindow):
             stream_urls=stream_urls,
             stream_type=stream_type,
             camera_id=camera.id,
+            playback_options=playback_options_for(self._settings),
+            reconnect_enabled=self._settings.reconnect_enabled,
+            backoff_schedule=self._settings.backoff_schedule(),
         )
         self.video_grid.place_tile(position, tile)
 
@@ -711,17 +757,20 @@ class MainWindow(QMainWindow):
             self.layout_selector.setCurrentText(f"{rows}x{columns}")
 
     def _mosaic_stream_type(self, nvr_default: StreamType) -> StreamType:
-        """Which stream to use for a mosaic cell.
+        """Which stream a newly opened mosaic cell should use.
 
-        Substream for real mosaics: 16 simultaneous main streams would be
+        Defaults to the substream: 16 simultaneous main streams would be
         both needless bandwidth and far more decoding than a cell-sized
         viewport can show. A 1x1 grid is effectively single-camera view, so
-        there the NVR's own default is honoured. Phase 5 makes this
-        per-cell and persists it with the layout.
+        there the NVR's own default is honoured.
+
+        Both are overridable — globally in the settings dialog (some NVRs
+        ship 10 fps substreams, which look choppy) and per cell from its
+        right-click menu, which is what a saved layout records.
         """
         if self.video_grid.cell_count == 1:
             return nvr_default
-        return StreamType.SUB
+        return self._settings.mosaic_stream.resolve(nvr_default)
 
     def _on_camera_dropped(self, camera_id: int, position: int) -> None:
         self._open_camera_at(camera_id, position)

@@ -20,14 +20,18 @@ import sys  # noqa: E402
 from camview.app import create_application  # noqa: E402
 from camview.config import get_db_path  # noqa: E402
 from camview.database.connection import initialize_database  # noqa: E402
+from camview.database.repositories import SettingsRepository  # noqa: E402
+from camview.services.settings import load_settings  # noqa: E402
 from camview.ui.main_window import MainWindow  # noqa: E402
 
 
 def main() -> int:
-    app = create_application(sys.argv)
-
+    # The database comes first because it holds the log directory setting,
+    # and logging is configured as part of building the application.
     connection = initialize_database(get_db_path())
     try:
+        settings = load_settings(SettingsRepository(connection))
+        app = create_application(sys.argv, log_dir=settings.log_dir)
         window = MainWindow(connection=connection)
         window.show()
         return app.exec()

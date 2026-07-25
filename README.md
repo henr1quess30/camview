@@ -95,9 +95,9 @@ src/camview/
 Em desenvolvimento incremental. Veja [PLAN.md](PLAN.md) para o roteiro
 completo de fases e o que já foi concluído.
 
-Fase atual: **Fase 6 concluída** — mosaico, layouts salvos e restauração
-da sessão, validados contra NVRs Hikvision reais com até 16 streams
-simultâneos.
+Fase atual: **Fase 7 concluída** — mosaico, layouts salvos, restauração da
+sessão e tela de configurações, validados contra NVRs Hikvision reais com
+até 16 streams simultâneos.
 
 Como usar hoje:
 
@@ -120,10 +120,37 @@ respeita o stream padrão configurado no NVR.
 Se uma célula travar — o NVR às vezes para de enviar sem avisar, e nesse
 caso o libVLC não reporta erro nenhum — o CamView percebe em ~10 segundos
 (nenhum quadro novo na tela) e reconecta aquela célula sozinho, sem mexer
-nas outras. Vale notar que o mosaico mostra o substream: se ele parecer
-mais "picotado" que a tela cheia, provavelmente é a taxa de quadros
-configurada no próprio equipamento (já foram vistos substreams a 10 fps
-com o stream principal a 25).
+nas outras.
+
+### Mosaico picotado? Troque o stream
+
+O mosaico usa substream para economizar banda e CPU, e muitos NVRs
+entregam o substream com taxa de quadros baixa (10 fps contra 25 do
+principal, em dois equipamentos testados aqui). Duas saídas:
+
+- **Botão direito numa célula** → "Stream principal". Vale só para aquela
+  célula, sobrevive a maximizar/restaurar e é gravada no layout.
+- **Configurações → Stream do mosaico**, se você preferir mudar todas de
+  uma vez (ou seguir o padrão configurado em cada NVR).
+
+Medido num NVR real: 13 fps a 640x360 no substream contra 29,8 fps a
+1920x1080 no principal, na mesma célula.
+
+## Configurações
+
+Menu **File → Configurações...** (`Ctrl+,`):
+
+- **Reprodução:** latência (buffer), transporte RTSP (TCP ou UDP), stream
+  do mosaico e áudio.
+- **Reconexão:** ligar/desligar a reconexão automática e o intervalo
+  máximo entre tentativas.
+- **Ao abrir:** iniciar maximizado e reabrir o último layout.
+- **Logs:** diretório dos arquivos de log (passa a valer na próxima
+  abertura).
+
+As opções de reprodução chegam ao libVLC quando um stream começa, então
+valem para as células abertas ou reconectadas dali em diante — as que já
+estão rodando continuam como estavam.
 
 ### Layouts salvos
 

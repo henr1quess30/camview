@@ -170,6 +170,9 @@ class VideoGrid(QWidget):
         tile.closeRequested.connect(lambda: self._on_tile_close_requested(tile))
         tile.doubleClicked.connect(lambda: self._on_tile_double_clicked(tile))
         tile.clicked.connect(lambda: self._on_tile_clicked(tile))
+        tile.streamTypeRequested.connect(
+            lambda stream_type: self._on_stream_type_requested(tile, stream_type)
+        )
         self._tiles[position] = tile
         self._rebuild()
 
@@ -313,6 +316,26 @@ class VideoGrid(QWidget):
     def _on_tile_clicked(self, tile: VideoTile) -> None:
         if tile.grid_position is not None:
             self.select(tile.grid_position)
+
+    def _on_stream_type_requested(
+        self, tile: VideoTile, stream_type: StreamType
+    ) -> None:
+        if tile.grid_position is not None:
+            self.set_stream_type(tile.grid_position, stream_type)
+
+    def set_stream_type(self, position: int, stream_type: StreamType) -> None:
+        """Switch one cell's stream, keeping the choice across maximize.
+
+        Choosing a stream while a cell is maximized must not be undone by
+        restoring it: the remembered "mosaic stream" for that cell becomes
+        the new choice, which is also what a saved layout records.
+        """
+        tile = self._tiles.get(position)
+        if tile is None:
+            return
+        if self._maximized_position == position:
+            self._mosaic_stream_types[position] = stream_type
+        tile.set_stream_type(stream_type)
 
     def keyPressEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         if event.key() == Qt.Key.Key_Escape and self.is_maximized():

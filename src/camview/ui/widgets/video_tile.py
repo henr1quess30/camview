@@ -13,15 +13,25 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from enum import Enum
+from functools import partial
 from time import monotonic
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QMimeData, QPoint, Qt, QTimer, Signal
-from PySide6.QtGui import QDrag, QIcon, QMouseEvent, QPainter, QPaintEvent
+from PySide6.QtGui import (
+    QActionGroup,
+    QContextMenuEvent,
+    QDrag,
+    QIcon,
+    QMouseEvent,
+    QPainter,
+    QPaintEvent,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QStackedLayout,
     QStyle,
     QStyleOption,
@@ -31,7 +41,7 @@ from PySide6.QtWidgets import (
 )
 
 from camview.models.camera import StreamType
-from camview.services.reconnect import ReconnectBackoff
+from camview.services.reconnect import DEFAULT_BACKOFF_SCHEDULE_S, ReconnectBackoff
 from camview.services.stream_manager import (
     PlaybackOptions,
     VlcUnavailableError,
@@ -78,6 +88,8 @@ class VideoTile(QWidget):
     closeRequested = Signal()
     doubleClicked = Signal()
     clicked = Signal()
+    #: The user picked a stream for this cell from its context menu.
+    streamTypeRequested = Signal(object)
 
     _playingSignal = Signal()
     _errorSignal = Signal(str)
@@ -90,6 +102,8 @@ class VideoTile(QWidget):
         stream_type: StreamType = StreamType.SUB,
         playback_options: PlaybackOptions | None = None,
         camera_id: int | None = None,
+        reconnect_enabled: bool = True,
+        backoff_schedule: tuple[int, ...] = DEFAULT_BACKOFF_SCHEDULE_S,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -102,7 +116,8 @@ class VideoTile(QWidget):
         #: Set by VideoGrid when the tile is placed; ``None`` when unplaced.
         self.grid_position: int | None = None
         self._playback_options = playback_options or PlaybackOptions()
-        self._backoff = ReconnectBackoff()
+        self._reconnect_enabled = reconnect_enabled
+        self._backoff = ReconnectBackoff(backoff_schedule)
         self._player: vlc.MediaPlayer | None = None
         self.status = ConnectionStatus.CONNECTING
         self._selected = False
@@ -308,6 +323,16 @@ class VideoTile(QWidget):
     def _schedule_reconnect(self, message: str) -> None:
         self._stall_timer.stop()
         self._healthy_timer.stop()
+
+        if not self._reconnect_enabled:
+            logger.warning(
+                "Tile '%s' disconnected (%s); automatic reconnect is off",
+                self.title,
+                message,
+            )
+            self._set_status(ConnectionStatus.ERROR, message)
+            return
+
         delay = self._backoff.next_delay_seconds()
         logger.warning(
             "Tile '%s' disconnected (%s); reconnecting in %ds",
@@ -377,6 +402,39 @@ class VideoTile(QWidget):
             self._drag_origin = event.position().toPoint()
             self.clicked.emit()
         super().mousePressEvent(event)
+
+    def contextMenuEvent(self, event: QContextMenuEvent) -> None:
+        """Right-click menu for picking this cell's stream.
+
+        Per cell rather than global because the reason to switch is
+        per camera: many NVRs ship substreams at 10 fps against 25 on the
+        main stream, so one choppy camera shouldn't force every other cell
+        onto a full-resolution stream.
+        """
+        menu = QMenu(self)
+        group = QActionGroup(menu)
+        group.setExclusive(True)
+
+        for stream_type, label in (
+            (StreamType.MAIN, "Stream principal"),
+            (StreamType.SUB, "Substream"),
+        ):
+            if stream_type not in self._stream_urls:
+                continue
+            action = menu.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(stream_type == self.stream_type)
+            action.triggered.connect(
+                partial(self.streamTypeRequested.emit, stream_type)
+            )
+            group.addAction(action)
+
+        menu.addSeparator()
+        close_action = menu.addAction("Fechar célula")
+        close_action.triggered.connect(self.closeRequested.emit)
+
+        menu.exec(event.globalPos())
+        event.accept()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if (

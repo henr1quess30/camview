@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from pathlib import Path
 from types import TracebackType
 
 from PySide6.QtWidgets import QApplication
@@ -32,10 +33,22 @@ def _install_excepthook() -> None:
     sys.excepthook = handle_exception
 
 
-def create_application(argv: list[str]) -> QApplication:
-    """Build the QApplication, with logging and crash handling wired up."""
-    config = AppConfig()
-    configure_logging(config.log_dir)
+def create_application(
+    argv: list[str], log_dir: Path | None = None
+) -> QApplication:
+    """Build the QApplication, with logging and crash handling wired up.
+
+    ``log_dir`` comes from the user's settings; ``None`` keeps the default
+    XDG location. A configured directory that can't be written to falls
+    back to the default rather than aborting startup.
+    """
+    config = AppConfig(log_dir=log_dir) if log_dir is not None else AppConfig()
+    try:
+        configure_logging(config.log_dir)
+    except OSError:
+        config = AppConfig()
+        configure_logging(config.log_dir)
+        logger.warning("Configured log directory unusable; using %s", config.log_dir)
     _install_excepthook()
 
     app = QApplication(argv)
