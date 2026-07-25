@@ -95,8 +95,9 @@ src/camview/
 Em desenvolvimento incremental. Veja [PLAN.md](PLAN.md) para o roteiro
 completo de fases e o que já foi concluído.
 
-Fase atual: **Fase 5 concluída** — mosaico e layouts salvos, validados
-contra NVRs Hikvision reais com até 16 streams simultâneos.
+Fase atual: **Fase 6 concluída** — mosaico, layouts salvos e restauração
+da sessão, validados contra NVRs Hikvision reais com até 16 streams
+simultâneos.
 
 Como usar hoje:
 
@@ -139,7 +140,10 @@ Câmeras removidas depois que o layout foi salvo simplesmente não abrem — o
 resto do layout carrega normalmente e a status bar informa quantas ficaram
 de fora.
 
-Restaurar o último layout automaticamente ao abrir o app vem na Fase 6.
+Ao fechar o CamView, ele guarda o tamanho/posição da janela, a grade e o
+layout aberto; na próxima vez tudo volta como estava — inclusive as
+câmeras reproduzindo. Mosaico montado na hora e não salvo não é
+restaurado: só layouts nomeados voltam.
 
 ### Nota sobre Wayland
 

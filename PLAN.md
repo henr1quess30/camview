@@ -17,7 +17,7 @@ validada antes de avançar para a próxima.
 - [x] Fase 3 — Célula de vídeo única
 - [x] Fase 4 — Mosaico
 - [x] Fase 5 — Layouts salvos
-- [ ] Fase 6 — Restauração de estado ao abrir
+- [x] Fase 6 — Restauração de estado ao abrir
 - [ ] Fase 7 — Tela de configurações
 - [ ] Fase 8 — Tratamento de erros
 - [ ] Fase 9 — Polimento de UI
@@ -284,11 +284,38 @@ grade voltou para 3x3 e as **4/4 células voltaram a reproduzir** nas
 mesmas posições e resoluções (640x360, 704x480). Layout de teste
 removido do banco ao final.
 
-## Fase 6 — Restauração de estado ao abrir
+## Fase 6 — Restauração de estado ao abrir ✅
 
-Ao iniciar, restaurar: último layout usado, geometria/posição da janela,
-estado maximizado, última grade selecionada — via tabela `settings` e
-`closeEvent` da janela principal.
+`_save_session()` no `closeEvent` e `_restore_session()` no construtor,
+usando a tabela `settings`: geometria da janela (que já inclui o estado
+maximizado, via `saveGeometry`), posição de docks/toolbar
+(`saveState`), a grade selecionada e o último layout aberto.
+
+### Decisões de implementação
+
+- **Só layouts nomeados voltam.** Um mosaico montado na hora e não salvo
+  não é restaurado: reabrir 16 streams que o usuário nunca quis guardar
+  seria presunçoso, e o remédio ("salve como layout") é explícito.
+- **Cada parte é restaurada de forma independente.** Uma geometria
+  corrompida no banco não pode custar o layout do usuário; blobs
+  inválidos são logados e ignorados (`_decode`), assim como um id de
+  layout que não é número ou que já foi excluído.
+- **Restauração é silenciosa** (`_load_layout(..., quiet=True)`): um NVR
+  sem senha armazenada logaria um modal por cima de uma janela que ainda
+  nem apareceu. O resumo vai para a status bar; os diálogos continuam
+  valendo quando o usuário carrega um layout à mão.
+- **Salvar sessão nunca impede de fechar o app**: erro de SQLite ali é
+  logado e engolido.
+- Os blobs binários do Qt são gravados em base64, porque a tabela
+  `settings` é texto puro (chave/valor).
+
+### Validação real
+
+Dois processos separados (reinício de verdade) contra o NVR
+`192.0.2.3`: o primeiro montou uma grade 3x3 com câmeras nas células
+0, 2, 4 e 6, salvou o layout e redimensionou a janela para 1024x640; o
+segundo abriu com título, grade, seletor, células e tamanho idênticos e
+**4/4 streams reproduzindo**.
 
 ## Fase 7 — Tela de configurações
 

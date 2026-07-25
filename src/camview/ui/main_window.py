@@ -7,11 +7,13 @@ saving/restoring named layouts.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
 import sqlite3
 from functools import partial
 
-from PySide6.QtCore import QSignalBlocker, Qt
+from PySide6.QtCore import QByteArray, QSignalBlocker, Qt
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QComboBox,
@@ -30,6 +32,7 @@ from camview.database.repositories import (
     CameraRepository,
     LayoutRepository,
     NvrRepository,
+    SettingsRepository,
 )
 from camview.models.camera import Camera, StreamType
 from camview.models.layout import Layout, LayoutItem
@@ -52,6 +55,27 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_GRID_SHAPE = "2x2"
 
+#: ``settings`` keys used to bring the previous session back on startup.
+SETTING_WINDOW_GEOMETRY = "window/geometry"
+SETTING_WINDOW_STATE = "window/state"
+SETTING_GRID_SHAPE = "mosaic/grid_shape"
+SETTING_LAST_LAYOUT_ID = "mosaic/last_layout_id"
+
+
+def _encode(blob: QByteArray) -> str:
+    """Qt geometry/state blobs are binary; ``settings`` stores text."""
+    return base64.b64encode(bytes(blob)).decode("ascii")
+
+
+def _decode(value: str | None) -> QByteArray | None:
+    if not value:
+        return None
+    try:
+        return QByteArray(base64.b64decode(value, validate=True))
+    except (binascii.Error, ValueError):
+        logger.warning("Ignoring corrupt stored window state")
+        return None
+
 
 class MainWindow(QMainWindow):
     """CamView's top-level window."""
@@ -68,6 +92,7 @@ class MainWindow(QMainWindow):
         self._nvr_repository = NvrRepository(connection)
         self._camera_repository = CameraRepository(connection)
         self._layout_repository = LayoutRepository(connection)
+        self._settings_repository = SettingsRepository(connection)
         #: Saved layout currently on screen, if any — the target of "Salvar".
         self._current_layout_id: int | None = None
 
@@ -76,6 +101,7 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
         self._build_menu()
         self._build_statusbar()
+        self._restore_session()
 
         logger.debug("MainWindow constructed")
 
@@ -142,9 +168,83 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Ready")
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        self._save_session()
         # Release every libVLC player before the widgets are torn down.
         self.video_grid.clear()
         super().closeEvent(event)
+
+    # ------------------------------------------------------------------
+    # Session state (window geometry, grid, last layout)
+    # ------------------------------------------------------------------
+
+    def _save_session(self) -> None:
+        """Remember where the window was and what it was showing.
+
+        Never allowed to block closing the app: a settings write that
+        fails is logged and swallowed.
+        """
+        try:
+            self._settings_repository.set(
+                SETTING_WINDOW_GEOMETRY, _encode(self.saveGeometry())
+            )
+            self._settings_repository.set(
+                SETTING_WINDOW_STATE, _encode(self.saveState())
+            )
+            self._settings_repository.set(
+                SETTING_GRID_SHAPE,
+                f"{self.video_grid.rows}x{self.video_grid.columns}",
+            )
+            if self._current_layout_id is None:
+                self._settings_repository.delete(SETTING_LAST_LAYOUT_ID)
+            else:
+                self._settings_repository.set(
+                    SETTING_LAST_LAYOUT_ID, str(self._current_layout_id)
+                )
+        except sqlite3.Error as exc:
+            logger.warning("Could not save session state: %s", exc)
+
+    def _restore_session(self) -> None:
+        """Put the window back where it was, showing what it was showing.
+
+        Each part is restored independently: a corrupt geometry blob must
+        not cost the user their last layout, and vice versa.
+        """
+        try:
+            settings = self._settings_repository.get_all()
+        except sqlite3.Error as exc:
+            logger.warning("Could not read session state: %s", exc)
+            return
+
+        geometry = _decode(settings.get(SETTING_WINDOW_GEOMETRY))
+        if geometry is not None:
+            self.restoreGeometry(geometry)
+        state = _decode(settings.get(SETTING_WINDOW_STATE))
+        if state is not None:
+            self.restoreState(state)
+
+        shape = GRID_SHAPES.get(settings.get(SETTING_GRID_SHAPE, ""))
+        if shape is not None:
+            self._apply_grid_shape(*shape)
+
+        self._restore_last_layout(settings.get(SETTING_LAST_LAYOUT_ID))
+
+    def _restore_last_layout(self, raw_layout_id: str | None) -> None:
+        """Reopen the layout from last time, if it is still there."""
+        if not raw_layout_id:
+            return
+        try:
+            layout_id = int(raw_layout_id)
+        except ValueError:
+            logger.warning("Ignoring invalid stored layout id %r", raw_layout_id)
+            return
+
+        if self._layout_repository.get(layout_id) is None:
+            logger.info("Last layout %d no longer exists; starting empty", layout_id)
+            return
+
+        # Quiet: a device missing its password must not greet the user with
+        # a modal dialog before the window is even on screen.
+        self._load_layout(layout_id, quiet=True)
 
     def _show_device_tree_context_menu(self, position: object) -> None:
         item = self.device_tree.itemAt(position)  # type: ignore[arg-type]
@@ -395,8 +495,12 @@ class MainWindow(QMainWindow):
         self._set_current_layout(layout)
         self.statusBar().showMessage(f"Layout '{layout.name}' salvo.", 5000)
 
-    def _load_layout(self, layout_id: int) -> None:
-        """Replace the mosaic with a saved layout's grid and cameras."""
+    def _load_layout(self, layout_id: int, quiet: bool = False) -> None:
+        """Replace the mosaic with a saved layout's grid and cameras.
+
+        ``quiet`` keeps password problems out of modal dialogs; see
+        :meth:`_nvr_password_or_warn`.
+        """
         layout = self._layout_repository.get(layout_id)
         if layout is None:
             self.statusBar().showMessage("Esse layout não existe mais.", 5000)
@@ -424,7 +528,7 @@ class MainWindow(QMainWindow):
                 skipped += 1
                 continue
             if nvr.id not in passwords:
-                passwords[nvr.id] = self._nvr_password_or_warn(nvr)  # type: ignore[index]
+                passwords[nvr.id] = self._nvr_password_or_warn(nvr, quiet=quiet)  # type: ignore[index]
             password = passwords[nvr.id]  # type: ignore[index]
             if password is None:
                 skipped += 1
@@ -470,18 +574,24 @@ class MainWindow(QMainWindow):
         if nvr_id is not None:
             self._open_nvr_mosaic(nvr_id)
 
-    def _nvr_password_or_warn(self, nvr: Nvr) -> str | None:
+    def _nvr_password_or_warn(self, nvr: Nvr, quiet: bool = False) -> str | None:
         """Fetch the NVR's password, reporting to the user if unusable.
 
         Returns ``None`` when the stream must not be attempted. Callers
         opening several cameras at once should call this once, not per
         camera, so a missing password produces one message rather than one
         per cell.
+
+        ``quiet`` suppresses the dialogs (used while restoring the previous
+        session at startup, where the caller summarises in the status bar
+        instead of stacking modals over a window that isn't shown yet).
         """
         try:
             password = get_nvr_password(nvr.id) or ""  # type: ignore[arg-type]
         except CredentialsError as exc:
-            QMessageBox.critical(self, "CamView", str(exc))
+            logger.error("Credentials unavailable for NVR %s: %s", nvr.name, exc)
+            if not quiet:
+                QMessageBox.critical(self, "CamView", str(exc))
             return None
 
         # Never attempt RTSP with an empty password. NVRs (Hikvision in
@@ -489,12 +599,14 @@ class MainWindow(QMainWindow):
         # missing keyring entry must fail loudly here instead of burning
         # authentication attempts against the device.
         if not password:
-            QMessageBox.warning(
-                self,
-                "CamView",
-                f"Nenhuma senha armazenada para o NVR '{nvr.name}'.\n\n"
-                "Edite o NVR e informe a senha antes de abrir o stream.",
-            )
+            logger.warning("No stored password for NVR '%s'", nvr.name)
+            if not quiet:
+                QMessageBox.warning(
+                    self,
+                    "CamView",
+                    f"Nenhuma senha armazenada para o NVR '{nvr.name}'.\n\n"
+                    "Edite o NVR e informe a senha antes de abrir o stream.",
+                )
             return None
         return password
 
