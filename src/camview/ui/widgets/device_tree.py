@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QMimeData, Qt
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem, QWidget
 
 from camview.database.repositories import CameraRepository, NvrRepository
@@ -38,12 +39,26 @@ class DeviceTree(QTreeWidget):
     def refresh(self) -> None:
         """Reload every NVR and camera from the database."""
         self.clear()
+        # Icons come from the desktop's own theme (Breeze on KDE), so the
+        # sidebar matches whatever the user is running instead of shipping
+        # its own artwork. A theme without these names simply gets no icon.
+        nvr_icon = QIcon.fromTheme("network-server")
+        camera_icon = QIcon.fromTheme("camera-video")
+        disabled_icon = QIcon.fromTheme("camera-video-off")
+
         for nvr in self._nvr_repository.list_all():
             nvr_item = QTreeWidgetItem([nvr.name])
             nvr_item.setData(0, NVR_ID_ROLE, nvr.id)
-            for camera in self._camera_repository.list_by_nvr(nvr.id):  # type: ignore[arg-type]
+            nvr_item.setIcon(0, nvr_icon)
+            nvr_item.setToolTip(0, f"{nvr.host}:{nvr.rtsp_port}")
+            cameras = self._camera_repository.list_by_nvr(nvr.id)  # type: ignore[arg-type]
+            for camera in cameras:
                 camera_item = QTreeWidgetItem([camera.name])
                 camera_item.setData(0, CAMERA_ID_ROLE, camera.id)
+                camera_item.setIcon(
+                    0, camera_icon if camera.enabled else disabled_icon
+                )
+                camera_item.setToolTip(0, f"Canal {camera.channel_number}")
                 nvr_item.addChild(camera_item)
             self.addTopLevelItem(nvr_item)
         self.expandAll()

@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from types import TracebackType
 
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from camview.config import AppConfig
@@ -53,6 +54,13 @@ def create_application(
 
     app = QApplication(argv)
     app.setApplicationName("CamView")
+    app.setApplicationDisplayName("CamView")
     app.setOrganizationName("CamView")
+    # Lets the desktop match the window to scripts/camview.desktop, which is
+    # what gives KDE's task manager the right icon and name.
+    app.setDesktopFileName("camview")
+    icon = QIcon.fromTheme("camera-video")
+    if not icon.isNull():
+        app.setWindowIcon(icon)
     logger.info("CamView starting up (log dir: %s)", config.log_dir)
     return app

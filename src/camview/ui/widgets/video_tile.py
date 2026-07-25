@@ -155,6 +155,16 @@ class VideoTile(QWidget):
 
         name_label = QLabel(self.title)
         name_label.setStyleSheet("font-weight: 600;")
+        name_label.setToolTip(self.title)
+
+        # Which stream a cell is on is not obvious from the picture, and it
+        # is exactly what a user asks about when one cell looks choppier
+        # than the rest.
+        self._stream_badge = QLabel()
+        self._stream_badge.setStyleSheet(
+            "color: palette(mid); font-size: 10px; letter-spacing: 1px;"
+        )
+        self._update_stream_badge()
 
         close_button = QToolButton()
         close_icon = QIcon.fromTheme("window-close")
@@ -169,10 +179,12 @@ class VideoTile(QWidget):
 
         header = QWidget()
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(6, 4, 4, 4)
+        header_layout.setContentsMargins(8, 4, 4, 4)
+        header_layout.setSpacing(8)
         header_layout.addWidget(self._status_dot)
         header_layout.addWidget(name_label)
         header_layout.addStretch()
+        header_layout.addWidget(self._stream_badge)
         header_layout.addWidget(close_button)
 
         self.video_widget = QWidget()
@@ -209,6 +221,15 @@ class VideoTile(QWidget):
 
         self.set_selected(False)
         self._set_status(ConnectionStatus.CONNECTING, "Conectando...")
+
+    def _update_stream_badge(self) -> None:
+        label = "PRINCIPAL" if self.stream_type is StreamType.MAIN else "SUB"
+        self._stream_badge.setText(label)
+        self._stream_badge.setToolTip(
+            "Stream principal (mais nitidez)"
+            if self.stream_type is StreamType.MAIN
+            else "Substream (menos banda e CPU) — botão direito para trocar"
+        )
 
     def _set_status(self, status: ConnectionStatus, message: str = "") -> None:
         self.status = status
@@ -369,6 +390,7 @@ class VideoTile(QWidget):
             stream_type.value,
         )
         self.stream_type = stream_type
+        self._update_stream_badge()
         self._backoff.reset()
         self._reconnect_timer.stop()
         self._connect()

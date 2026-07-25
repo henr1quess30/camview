@@ -20,7 +20,7 @@ validada antes de avançar para a próxima.
 - [x] Fase 6 — Restauração de estado ao abrir
 - [x] Fase 7 — Tela de configurações
 - [ ] Fase 8 — Tratamento de erros
-- [ ] Fase 9 — Polimento de UI
+- [x] Fase 9 — Polimento de UI
 - [ ] Fase 10 — Testes
 - [ ] Fase 11 — Empacotamento e documentação final
 
@@ -374,6 +374,13 @@ Validação real no `192.0.2.6`, mosaico 2x2:
 
 ## Fase 8 — Tratamento de erros
 
+**Pista do usuário a investigar aqui (2026-07-25):** deixando todas as
+células no stream **principal**, elas não congelam. Se o travamento
+silencioso só ocorre no substream, o suspeito é o encoder secundário do
+NVR, não a rede nem o app — o watchdog da Fase 3/4 cobre o sintoma, mas
+vale medir o congelamento por tipo de stream antes de concluir.
+
+
 Auditoria de todos os cenários de falha: IP/porta inválidos, credenciais
 incorretas, NVR inacessível, timeout, stream indisponível, codec não
 suportado, VLC não instalado, keyring indisponível, banco corrompido.
@@ -381,11 +388,52 @@ Cada caso deve ser capturado na camada correta, logado com detalhe técnico
 e apresentado ao usuário com mensagem compreensível — nenhuma exceção não
 tratada pode encerrar o aplicativo.
 
-## Fase 9 — Polimento de UI
+## Fase 9 — Polimento de UI ✅
 
-Tema escuro compatível com KDE Plasma, ícones do tema do sistema, espaçamento
-consistente, borda de seleção discreta na câmera focada, revisão visual de
-todos os diálogos e da toolbar.
+Feita *antes* da Fase 8 a pedido do usuário.
+
+- **Ícones do tema do sistema** em toda a interface (`_icon()` na
+  `MainWindow` aceita vários nomes e devolve o primeiro que existir, ou um
+  `QIcon` vazio — nome ausente vira "sem ícone", nunca imagem quebrada).
+  Verificado contra o Breeze real do usuário: os 12 nomes usados existem.
+- **Árvore lateral** com ícone de servidor para o NVR e de câmera para o
+  canal (apagado quando o canal está desabilitado), mais tooltips com
+  `host:porta` e o número do canal.
+- **Selo de stream na célula** (`SUB` / `PRINCIPAL`) no cabeçalho: qual
+  stream a célula usa não dá para deduzir da imagem, e é exatamente o que
+  se pergunta quando uma célula parece mais picotada que as outras. O
+  tooltip ensina o atalho (botão direito).
+- **Célula vazia** deixou de ser um traço solto: ícone esmaecido e o texto
+  "Arraste uma câmera aqui".
+- **Toolbar** com "Adicionar NVR", o seletor de mosaico rotulado e
+  "Salvar layout", com separadores.
+- **Status bar** ganhou um indicador permanente `N/M células`, alimentado
+  pelo novo sinal `VideoGrid.contentsChanged`.
+- **Diálogo de NVR**: botão de mostrar/ocultar a senha (digitar senha às
+  cegas é como se erra a credencial — e credencial errada é o que bloqueia
+  o IP desta máquina no equipamento), placeholder de endereço e rótulos
+  consistentes com os outros diálogos.
+- **Ícone e identidade da aplicação**: `setDesktopFileName("camview")` liga
+  a janela ao atalho `.desktop` (`StartupWMClass=camview`), o que dá ao
+  gerenciador de tarefas do KDE o ícone e o nome certos.
+
+### Sobre o tema escuro
+
+Nada de cores fixas: a interface usa papéis da paleta (`palette(mid)`,
+`palette(highlight)`), então segue o esquema de cores do desktop. Medido na
+sessão real do usuário: fundo `#202326` (tema escuro), ícones `breeze-dark`,
+destaque `#6c53a6` — tudo chegando ao app.
+
+As únicas cores fixas que sobraram são deliberadas: os três pontos de
+status (âmbar/verde/vermelho), que são semânticos e legíveis nos dois
+temas, e o texto branco sobre fundo preto da mensagem de erro, que fica
+sobre a área de vídeo.
+
+**Limitação conhecida:** só os estilos `Fusion` e `Windows` estão
+disponíveis — o Qt embutido no PySide6 não carrega o plugin de estilo
+Breeze do sistema (ABI/plugin path separados). Fusion + paleta e ícones do
+KDE é o resultado portátil e seguro; forçar o plugin do sistema arriscaria
+incompatibilidade binária por um ganho apenas estético.
 
 ## Fase 10 — Testes
 

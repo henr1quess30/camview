@@ -17,6 +17,6 @@ def test_main_window_constructs(
         assert window.windowTitle() == "CamView"
         assert window.device_tree is not None
         assert window.layout_selector.count() == 4
-        assert window.statusBar().currentMessage() == "Ready"
+        assert window.statusBar().currentMessage() == "Pronto"
     finally:
         window.close()

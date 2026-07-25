@@ -10,8 +10,15 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
-from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent, QIcon
+from PySide6.QtWidgets import (
+    QFrame,
+    QGraphicsOpacityEffect,
+    QGridLayout,
+    QLabel,
+    QVBoxLayout,
+    QWidget,
+)
 
 from camview.models.camera import StreamType
 from camview.ui.widgets.device_tree import CAMERA_MIME_TYPE
@@ -41,6 +48,10 @@ def smallest_shape_for(camera_count: int) -> tuple[int, int]:
     return GRID_SHAPES["4x4"]
 
 
+#: Shown in empty cells. Tells a first-time user what to do with them.
+EMPTY_CELL_HINT = "Arraste uma câmera aqui"
+
+
 class _EmptyCell(QFrame):
     """Placeholder shown in a cell with no camera."""
 
@@ -48,10 +59,25 @@ class _EmptyCell(QFrame):
         super().__init__(parent)
         self.setFrameShape(QFrame.Shape.StyledPanel)
         layout = QVBoxLayout(self)
-        label = QLabel("—")
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setStyleSheet("color: palette(mid);")
-        layout.addWidget(label)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        icon_label = QLabel()
+        icon = QIcon.fromTheme("camera-video")
+        if not icon.isNull():
+            icon_label.setPixmap(icon.pixmap(32, 32))
+            icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            # Themed icons are dark-on-light; fading it keeps an empty cell
+            # from competing with the live ones for attention.
+            effect = QGraphicsOpacityEffect(icon_label)
+            effect.setOpacity(0.35)
+            icon_label.setGraphicsEffect(effect)
+            layout.addWidget(icon_label)
+
+        self.hint_label = QLabel(EMPTY_CELL_HINT)
+        self.hint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.hint_label.setWordWrap(True)
+        self.hint_label.setStyleSheet("color: palette(mid); font-size: 11px;")
+        layout.addWidget(self.hint_label)
 
 
 class VideoGrid(QWidget):
@@ -59,6 +85,8 @@ class VideoGrid(QWidget):
 
     #: Emitted when a camera is dropped on a cell: (camera_id, position).
     cameraDropped = Signal(int, int)
+    #: Emitted whenever cells are added, removed, moved or reshaped.
+    contentsChanged = Signal()
 
     def __init__(
         self, rows: int = 2, columns: int = 2, parent: QWidget | None = None
@@ -128,6 +156,8 @@ class VideoGrid(QWidget):
             self._layout.setRowStretch(row, 1)
         for column in range(self.columns):
             self._layout.setColumnStretch(column, 1)
+
+        self.contentsChanged.emit()
 
     # ------------------------------------------------------------------
     # Tiles

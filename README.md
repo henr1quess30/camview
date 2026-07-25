@@ -95,9 +95,13 @@ src/camview/
 Em desenvolvimento incremental. Veja [PLAN.md](PLAN.md) para o roteiro
 completo de fases e o que já foi concluído.
 
-Fase atual: **Fase 7 concluída** — mosaico, layouts salvos, restauração da
-sessão e tela de configurações, validados contra NVRs Hikvision reais com
-até 16 streams simultâneos.
+Fases concluídas: **0 a 7 e 9** — mosaico, layouts salvos, restauração da
+sessão, tela de configurações e polimento visual, validados contra NVRs
+Hikvision reais com até 16 streams simultâneos. A Fase 8 (auditoria de
+tratamento de erros) ficou para depois, a pedido.
+
+A interface segue o tema do sistema (ícones e cores do KDE Plasma,
+inclusive no modo escuro) — não há tema próprio embutido.
 
 Como usar hoje:
 
@@ -113,6 +117,9 @@ Como usar hoje:
   stream principal (mais nitidez na tela cheia) e volta ao substream ao
   restaurar.
 - O seletor na barra superior alterna entre **1x1, 2x2, 3x3 e 4x4**.
+- O cabeçalho de cada célula mostra **SUB** ou **PRINCIPAL**, indicando qual
+  stream está em uso, e a barra inferior mostra quantas células estão
+  ocupadas.
 
 Mosaicos usam substream automaticamente (menos banda e CPU); a grade 1x1
 respeita o stream padrão configurado no NVR.

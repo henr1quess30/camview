@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import QThread, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -109,6 +110,15 @@ class NvrDialog(QDialog):
 
         self.password_edit = QLineEdit(password)
         self.password_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        # Typing an NVR password blind is where wrong credentials come from,
+        # and wrong credentials are what get this machine's IP locked out.
+        self.reveal_password_action = self.password_edit.addAction(
+            QIcon.fromTheme("view-visible"),
+            QLineEdit.ActionPosition.TrailingPosition,
+        )
+        self.reveal_password_action.setCheckable(True)
+        self.reveal_password_action.setToolTip("Mostrar a senha")
+        self.reveal_password_action.toggled.connect(self._on_reveal_password)
 
         self.channel_count_spin = QSpinBox()
         self.channel_count_spin.setRange(1, 128)
@@ -132,14 +142,16 @@ class NvrDialog(QDialog):
         self.test_result_label = QLabel("")
         self.test_result_label.setWordWrap(True)
 
+        self.host_edit.setPlaceholderText("192.168.0.10")
+
         form = QFormLayout()
-        form.addRow("Nome", self.name_edit)
-        form.addRow("Endereço (IP/host)", self.host_edit)
-        form.addRow("Porta RTSP", self.port_spin)
-        form.addRow("Usuário", self.username_edit)
-        form.addRow("Senha", self.password_edit)
-        form.addRow("Quantidade de canais", self.channel_count_spin)
-        form.addRow("Stream padrão", self.default_stream_combo)
+        form.addRow("Nome:", self.name_edit)
+        form.addRow("Endereço (IP/host):", self.host_edit)
+        form.addRow("Porta RTSP:", self.port_spin)
+        form.addRow("Usuário:", self.username_edit)
+        form.addRow("Senha:", self.password_edit)
+        form.addRow("Quantidade de canais:", self.channel_count_spin)
+        form.addRow("Stream padrão:", self.default_stream_combo)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -215,6 +227,17 @@ class NvrDialog(QDialog):
     def _on_test_failed(self, message: str) -> None:
         logger.warning("NVR connection test failed: %s", message)
         self.test_result_label.setText(f"Falha na conexão: {message}")
+
+    def _on_reveal_password(self, revealed: bool) -> None:
+        self.password_edit.setEchoMode(
+            QLineEdit.EchoMode.Normal if revealed else QLineEdit.EchoMode.Password
+        )
+        self.reveal_password_action.setIcon(
+            QIcon.fromTheme("view-hidden" if revealed else "view-visible")
+        )
+        self.reveal_password_action.setToolTip(
+            "Ocultar a senha" if revealed else "Mostrar a senha"
+        )
 
     def _on_accept(self) -> None:
         if not self.name_edit.text().strip():

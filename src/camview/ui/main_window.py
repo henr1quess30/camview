@@ -14,12 +14,13 @@ import sqlite3
 from functools import partial
 
 from PySide6.QtCore import QByteArray, QSignalBlocker, Qt
-from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
+from PySide6.QtGui import QAction, QCloseEvent, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDockWidget,
     QInputDialog,
+    QLabel,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -67,6 +68,20 @@ SETTING_WINDOW_GEOMETRY = "window/geometry"
 SETTING_WINDOW_STATE = "window/state"
 SETTING_GRID_SHAPE = "mosaic/grid_shape"
 SETTING_LAST_LAYOUT_ID = "mosaic/last_layout_id"
+
+
+def _icon(*names: str) -> QIcon:
+    """First icon the desktop theme actually has, or an empty one.
+
+    Names differ between themes (KDE ships ``configure``, others only
+    ``preferences-system``), and an empty QIcon simply renders as no icon
+    rather than a broken image — so nothing here can fail visibly.
+    """
+    for name in names:
+        icon = QIcon.fromTheme(name)
+        if not icon.isNull():
+            return icon
+    return QIcon()
 
 
 def _encode(blob: QByteArray) -> str:
@@ -142,6 +157,16 @@ class MainWindow(QMainWindow):
         toolbar = QToolBar("Main Toolbar", self)
         toolbar.setObjectName("mainToolbar")
         toolbar.setMovable(False)
+        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+
+        add_nvr_action = QAction(_icon("list-add"), "Adicionar NVR", self)
+        add_nvr_action.setToolTip("Cadastrar um novo NVR")
+        add_nvr_action.triggered.connect(self._add_nvr)
+        toolbar.addAction(add_nvr_action)
+        toolbar.addSeparator()
+
+        shape_label = QLabel("Mosaico: ")
+        toolbar.addWidget(shape_label)
 
         self.layout_selector = QComboBox()
         self.layout_selector.addItems(list(GRID_SHAPES))
@@ -150,25 +175,35 @@ class MainWindow(QMainWindow):
         self.layout_selector.currentTextChanged.connect(self._on_grid_shape_changed)
         toolbar.addWidget(self.layout_selector)
 
+        toolbar.addSeparator()
+        save_layout_action = QAction(
+            _icon("document-save"), "Salvar layout", self
+        )
+        save_layout_action.setToolTip("Salvar a composição atual (Ctrl+S)")
+        save_layout_action.triggered.connect(self._save_layout)
+        toolbar.addAction(save_layout_action)
+
         self.addToolBar(toolbar)
 
     def _build_menu(self) -> None:
         file_menu = self.menuBar().addMenu("&File")
 
-        settings_action = QAction("&Configurações...", self)
+        settings_action = QAction(
+            _icon("configure", "preferences-system"), "&Configurações...", self
+        )
         settings_action.setShortcut(QKeySequence.StandardKey.Preferences)
         settings_action.triggered.connect(self._edit_settings)
         file_menu.addAction(settings_action)
         file_menu.addSeparator()
 
-        quit_action = QAction("&Quit", self)
+        quit_action = QAction(_icon("application-exit"), "&Sair", self)
         quit_action.setShortcut(QKeySequence.StandardKey.Quit)
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
 
         nvr_menu = self.menuBar().addMenu("&NVR")
 
-        add_nvr_action = QAction("&Adicionar NVR...", self)
+        add_nvr_action = QAction(_icon("list-add"), "&Adicionar NVR...", self)
         add_nvr_action.triggered.connect(self._add_nvr)
         nvr_menu.addAction(add_nvr_action)
 
@@ -179,7 +214,21 @@ class MainWindow(QMainWindow):
         self._rebuild_layouts_menu()
 
     def _build_statusbar(self) -> None:
-        self.statusBar().showMessage("Ready")
+        # Permanent widget (right-hand side): survives the transient
+        # showMessage() texts, so the count is always readable.
+        self.cell_count_label = QLabel()
+        self.cell_count_label.setStyleSheet("color: palette(mid); margin-right: 6px;")
+        self.statusBar().addPermanentWidget(self.cell_count_label)
+        # Connected here, not in _build_central_widget: the grid emits while
+        # rebuilding, and the label it updates must already exist.
+        self.video_grid.contentsChanged.connect(self._update_cell_count)
+        self._update_cell_count()
+        self.statusBar().showMessage("Pronto")
+
+    def _update_cell_count(self) -> None:
+        used = len(self.video_grid.tiles())
+        total = self.video_grid.cell_count
+        self.cell_count_label.setText(f"{used}/{total} células")
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self._save_session()
@@ -423,15 +472,19 @@ class MainWindow(QMainWindow):
         menu = self.layouts_menu
         menu.clear()
 
-        save_action = menu.addAction("&Salvar layout")
+        save_action = menu.addAction(_icon("document-save"), "&Salvar layout")
         save_action.setShortcut(QKeySequence.StandardKey.Save)
         save_action.triggered.connect(self._save_layout)
 
-        save_as_action = menu.addAction("Salvar &como...")
+        save_as_action = menu.addAction(
+            _icon("document-save-as"), "Salvar &como..."
+        )
         save_as_action.setShortcut(QKeySequence("Ctrl+Shift+S"))
         save_as_action.triggered.connect(self._save_layout_as)
 
-        manage_action = menu.addAction("&Gerenciar layouts...")
+        manage_action = menu.addAction(
+            _icon("view-list-details", "document-open"), "&Gerenciar layouts..."
+        )
         manage_action.triggered.connect(self._manage_layouts)
 
         layouts = self._layout_repository.list_all()
