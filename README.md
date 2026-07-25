@@ -116,6 +116,14 @@ Como usar hoje:
 Mosaicos usam substream automaticamente (menos banda e CPU); a grade 1x1
 respeita o stream padrão configurado no NVR.
 
+Se uma célula travar — o NVR às vezes para de enviar sem avisar, e nesse
+caso o libVLC não reporta erro nenhum — o CamView percebe em ~10 segundos
+(nenhum quadro novo na tela) e reconecta aquela célula sozinho, sem mexer
+nas outras. Vale notar que o mosaico mostra o substream: se ele parecer
+mais "picotado" que a tela cheia, provavelmente é a taxa de quadros
+configurada no próprio equipamento (já foram vistos substreams a 10 fps
+com o stream principal a 25).
+
 ### Layouts salvos
 
 Monte o mosaico como quiser e guarde-o com um nome ("Fábrica", "Portaria"):

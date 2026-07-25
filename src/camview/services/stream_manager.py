@@ -88,6 +88,36 @@ def reset_vlc_instance() -> None:
         _instance = None
 
 
+def displayed_picture_count(player: object) -> int | None:
+    """How many frames libVLC has put on screen for ``player`` so far.
+
+    This is the only counter that answers "is this cell still moving?".
+    A stalled RTSP stream keeps the player in the *playing* state and
+    fires no error event — the picture simply stops updating — so the
+    stall watchdog in :class:`~camview.ui.widgets.video_tile.VideoTile`
+    compares this value over time.
+
+    Returns ``None`` whenever the count can't be read (no media yet,
+    fake players in tests, a libVLC version without the field), which
+    callers must treat as "unknown", never as "stalled".
+    """
+    try:
+        import ctypes
+
+        import vlc
+
+        media = player.get_media()  # type: ignore[attr-defined]
+        if media is None:
+            return None
+        stats = vlc.MediaStats()
+        if not vlc.libvlc_media_get_stats(media, ctypes.byref(stats)):
+            return None
+        return int(stats.displayed_pictures)
+    except Exception:  # noqa: BLE001 - diagnostics must never break playback
+        logger.debug("Could not read displayed picture count", exc_info=True)
+        return None
+
+
 @dataclass(frozen=True, slots=True)
 class PlaybackOptions:
     """Low-latency playback tuning, applied per-stream (not instance-wide).

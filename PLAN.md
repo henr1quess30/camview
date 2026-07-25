@@ -140,6 +140,52 @@ aconteça com usuários reais, `_show_camera_stream()` agora recusa abrir
 o stream quando não há senha armazenada, exibindo uma mensagem clara em
 vez de tentar autenticar. Coberto por teste de regressão.
 
+### Watchdog de travamento (bug encontrado em uso real)
+
+Sintoma relatado: no mosaico, **algumas células congelam enquanto outras
+seguem normais**, e a célula só volta ao ser maximizada.
+
+Diagnóstico por medição, usando os contadores do próprio libVLC
+(`libvlc_media_get_stats`) por célula — bytes lidos, quadros decodificados
+e quadros **exibidos**:
+
+- Um mosaico 3x3 no NVR `192.0.2.3` ficou 3 minutos a 25–30 fps por
+  célula, zero quadros perdidos. Não é problema geral de rede/decoder.
+- Num 4x4 no `192.0.2.4` uma célula ficou em **0,0 fps por mais de dois
+  minutos** enquanto o app continuava exibindo status "playing".
+- Não é saturação de CPU: 16 substreams H.265 consomem ~141% de 800%
+  disponíveis (i7-860, 8 threads). A GPU (Radeon HD 5000) não decodifica
+  H.265, então tudo roda por software mesmo — e cabe.
+
+**Causa:** quando o NVR simplesmente para de enviar, o libVLC **não emite
+`EncounteredError` nem `EndReached`** — o player continua "tocando" e a
+imagem congela. Sem evento, nada disparava a reconexão que já existia
+desde a Fase 3. Maximizar "resolvia" porque troca de stream e reconecta.
+
+**Correção:** `VideoTile` passou a ter um watchdog (`_check_for_stall`,
+a cada 2s) que compara `displayed_pictures` ao longo do tempo; 10s sem
+nenhum quadro novo contam como travamento e disparam a mesma reconexão
+com backoff. Detalhes que evitam efeitos colaterais:
+
+- **Contador desconhecido nunca é travamento.** Se o libVLC não devolve
+  as estatísticas, o watchdog não faz nada — caso contrário uma versão
+  sem esse campo colocaria todas as células em loop de reconexão.
+- **Célula oculta não é julgada.** Com outra célula maximizada as demais
+  ficam escondidas e podem legitimamente parar de renderizar.
+- **Backoff só zera após 30s de reprodução contínua**
+  (`HEALTHY_PLAYBACK_S`). Antes, o backoff zerava assim que o player
+  chegava a "playing", então um stream que trava a cada poucos segundos
+  reconectaria eternamente no menor intervalo.
+- **Limite de 10s** é generoso de propósito: há substreams configurados a
+  10 fps (`192.0.2.6`, `198.51.100.206`) e equipamentos permitem até
+  1 fps — lento não pode ser confundido com morto.
+
+Validado ao vivo: congelando artificialmente o contador de uma célula,
+o app detectou em 10s, reconectou e voltou a reproduzir, sem perturbar as
+outras três; e um mosaico real de 16 células rodou 4 minutos sem nenhum
+falso positivo (incluindo um canal a 13 fps com perda contínua de
+quadros, corretamente não sinalizado).
+
 ## Fase 4 — Mosaico ✅
 
 `VideoGrid` (`QGridLayout`) com grades 1x1/2x2/3x3/4x4 selecionáveis pela

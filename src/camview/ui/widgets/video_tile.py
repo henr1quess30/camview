@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from enum import Enum
+from time import monotonic
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QMimeData, QPoint, Qt, QTimer, Signal
@@ -34,6 +35,7 @@ from camview.services.reconnect import ReconnectBackoff
 from camview.services.stream_manager import (
     PlaybackOptions,
     VlcUnavailableError,
+    displayed_picture_count,
     get_vlc_instance,
 )
 
@@ -57,6 +59,17 @@ _STATUS_COLORS: dict[ConnectionStatus, str] = {
 
 #: Mime type used when dragging an already-placed tile to another grid cell.
 GRID_POSITION_MIME_TYPE = "application/x-camview-grid-position"
+
+#: How often to ask libVLC whether new frames reached the screen.
+STALL_CHECK_INTERVAL_MS = 2000
+#: Seconds without a single new frame before a cell counts as stalled.
+#: Generous on purpose: NVR substreams are sometimes configured as low as
+#: 1 fps, and a slow cell must never be mistaken for a dead one.
+STALL_TIMEOUT_S = 10.0
+#: How long a stream must keep playing before its reconnect backoff resets.
+#: Without this, a cell that stalls every few seconds would reconnect at
+#: the shortest delay forever instead of backing off.
+HEALTHY_PLAYBACK_S = 30.0
 
 
 class VideoTile(QWidget):
@@ -104,6 +117,18 @@ class VideoTile(QWidget):
         self._reconnect_timer = QTimer(self)
         self._reconnect_timer.setSingleShot(True)
         self._reconnect_timer.timeout.connect(self._connect)
+
+        # Watchdog: a stalled RTSP stream stays "playing" and reports no
+        # error — the picture just stops. Only the frame counter reveals it.
+        self._last_picture_count: int | None = None
+        self._last_progress_at: float = monotonic()
+        self._stall_timer = QTimer(self)
+        self._stall_timer.setInterval(STALL_CHECK_INTERVAL_MS)
+        self._stall_timer.timeout.connect(self._check_for_stall)
+
+        self._healthy_timer = QTimer(self)
+        self._healthy_timer.setSingleShot(True)
+        self._healthy_timer.timeout.connect(self._backoff.reset)
 
         # Deferred so the video widget is realized/mapped on screen before
         # libVLC is asked to embed into its window id.
@@ -216,6 +241,10 @@ class VideoTile(QWidget):
         media = instance.media_new(self.url, *self._playback_options.to_media_options())
         self._player.set_media(media)
         self._player.play()
+        # New media, new counters: the watchdog's clock restarts here, so the
+        # connection attempt itself gets the full grace period.
+        self._last_picture_count = None
+        self._last_progress_at = monotonic()
 
     def _handle_vlc_playing(self, event: object) -> None:
         self._playingSignal.emit()
@@ -227,8 +256,48 @@ class VideoTile(QWidget):
         self._endedSignal.emit()
 
     def _on_playing(self) -> None:
-        self._backoff.reset()
         self._set_status(ConnectionStatus.PLAYING)
+        self._last_picture_count = None
+        self._last_progress_at = monotonic()
+        self._stall_timer.start()
+        # Only a stream that keeps playing counts as a recovered one.
+        self._healthy_timer.start(int(HEALTHY_PLAYBACK_S * 1000))
+
+    def _check_for_stall(self) -> None:
+        """Reconnect a cell whose picture stopped updating.
+
+        libVLC reports no error for this: the player stays in the playing
+        state while the NVR quietly stops sending. Users saw it as "some
+        cells freeze and only come back if I open that channel" — opening
+        it maximized happened to force a reconnect, which is exactly what
+        this does automatically.
+        """
+        if self.status != ConnectionStatus.PLAYING:
+            return
+        # A hidden tile (another cell is maximized) may legitimately stop
+        # rendering; judging it stalled would reconnect the whole mosaic.
+        if not self.isVisible():
+            self._last_progress_at = monotonic()
+            return
+
+        count = displayed_picture_count(self._player)
+        if count is None:
+            return  # Unknown is not the same as stalled.
+
+        if self._last_picture_count is None or count > self._last_picture_count:
+            self._last_picture_count = count
+            self._last_progress_at = monotonic()
+            return
+
+        if monotonic() - self._last_progress_at < STALL_TIMEOUT_S:
+            return
+
+        logger.warning(
+            "Tile '%s' stalled: no new frames for %.0fs, reconnecting",
+            self.title,
+            STALL_TIMEOUT_S,
+        )
+        self._schedule_reconnect("Stream travado (sem novos quadros).")
 
     def _on_error(self, message: str) -> None:
         self._schedule_reconnect(message)
@@ -237,6 +306,8 @@ class VideoTile(QWidget):
         self._schedule_reconnect("Stream encerrado pelo dispositivo.")
 
     def _schedule_reconnect(self, message: str) -> None:
+        self._stall_timer.stop()
+        self._healthy_timer.stop()
         delay = self._backoff.next_delay_seconds()
         logger.warning(
             "Tile '%s' disconnected (%s); reconnecting in %ds",
@@ -343,6 +414,8 @@ class VideoTile(QWidget):
         cannot happen automatically.
         """
         self._reconnect_timer.stop()
+        self._stall_timer.stop()
+        self._healthy_timer.stop()
         if self._player is not None:
             self._player.stop()
             self._player.release()
