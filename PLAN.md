@@ -21,7 +21,7 @@ validada antes de avançar para a próxima.
 - [x] Fase 7 — Tela de configurações
 - [x] Fase 8 — Tratamento de erros
 - [x] Fase 9 — Polimento de UI
-- [ ] Fase 10 — Testes
+- [x] Fase 10 — Testes
 - [ ] Fase 11 — Empacotamento e documentação final
 
 ## Fase 0 — Scaffold & janela vazia
@@ -488,12 +488,46 @@ Breeze do sistema (ABI/plugin path separados). Fusion + paleta e ícones do
 KDE é o resultado portátil e seguro; forçar o plugin do sistema arriscaria
 incompatibilidade binária por um ganho apenas estético.
 
-## Fase 10 — Testes
+## Fase 10 — Testes ✅
 
-Cobertura de: repositórios de banco, geração de URL RTSP, round-trip de
-layouts (salvar/carregar), resolução de paths de configuração. Módulos
-puros com cobertura real; código dependente de UI/VLC com mocks/thin seams.
-Nenhuma senha real em fixtures de teste.
+**324 testes, 92% de cobertura.** Todos os módulos puros e de serviço em
+**100%**: repositórios (99%), geração de URL RTSP, credenciais, backoff,
+conectividade, descoberta ISAPI, configurações e resolução de paths XDG.
+
+Preenchido nesta fase o que faltava:
+
+- `config.py` (0 → 100%): resolução XDG com `XDG_DATA_HOME`/`XDG_STATE_HOME`
+  e o fallback para `~/.local/...`. Todo teste redireciona as variáveis
+  para um diretório temporário — um teste que tocasse o caminho real
+  poderia escrever no banco de verdade do usuário.
+- `logging_setup.py` (42 → 100%) e `app.py` (50 → 97%): o `QApplication`
+  é substituído por um dublê, já que só pode existir um por processo.
+- `hikvision._fetch` (0 → 100%): mapeamento de 401/403 para "usuário ou
+  senha incorretos", demais códigos HTTP e falhas de rede.
+- `stream_manager.displayed_picture_count`: o contador do watchdog nunca
+  pode levantar exceção — player estranho, sem mídia ou libVLC recusando
+  as estatísticas devolvem "desconhecido".
+- Drag-and-drop ponta a ponta (árvore → grade, célula → célula), incluindo
+  payload desconhecido e drop fora de qualquer célula.
+- Workers em `QThread` do diálogo de NVR e o retorno deles para a UI.
+- Menu de contexto da célula (a saída para o mosaico picotado).
+
+### Decisões
+
+- **`pytest` roda headless sem configuração**: o `conftest.py` define
+  `QT_QPA_PLATFORM=offscreen` antes de qualquer import do PySide6.
+- **A suíte não toca a rede.** Isso foi verificado de fato: o bug do
+  timer de conexão diferida (Fase 8) foi descoberto justamente porque a
+  suíte completa emitia `live555 demux error` — testes tentando falar com
+  `192.0.2.10`.
+- **Nenhuma senha real**: fixtures usam `"test-password"`/`"senha-falsa"` e
+  endereços da faixa de documentação RFC 5737 (`192.0.2.x`).
+- **Refatoração exigida por testabilidade:** `VideoTile.build_context_menu()`
+  foi separado de `contextMenuEvent`, porque `menu.exec()` abre um modal e
+  travava a execução dos testes. Construir e exibir agora são passos
+  distintos.
+- O que segue sem cobertura é deliberado: pintura de widget, arrastar com
+  o mouse de verdade e o `main()` (que constrói `QApplication` real).
 
 ## Fase 11 — Empacotamento e documentação final
 

@@ -453,12 +453,19 @@ class VideoTile(QWidget):
         super().mousePressEvent(event)
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
+        self.build_context_menu().exec(event.globalPos())
+        event.accept()
+
+    def build_context_menu(self) -> QMenu:
         """Right-click menu for picking this cell's stream.
 
         Per cell rather than global because the reason to switch is
         per camera: many NVRs ship substreams at 10 fps against 25 on the
         main stream, so one choppy camera shouldn't force every other cell
         onto a full-resolution stream.
+
+        Built separately from showing it, so its contents can be inspected
+        without opening a modal that would hang a test run.
         """
         menu = QMenu(self)
         group = QActionGroup(menu)
@@ -481,9 +488,7 @@ class VideoTile(QWidget):
         menu.addSeparator()
         close_action = menu.addAction("Fechar célula")
         close_action.triggered.connect(self.closeRequested.emit)
-
-        menu.exec(event.globalPos())
-        event.accept()
+        return menu
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if (

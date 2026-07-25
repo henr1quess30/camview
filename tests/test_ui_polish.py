@@ -79,6 +79,82 @@ class TestStreamBadge:
         tile.close_stream()
 
 
+class TestCellContextMenu:
+    """The right-click menu is the documented way out of a choppy mosaic."""
+
+    @staticmethod
+    def _labels(tile: VideoTile) -> list[str]:
+        return [
+            action.text()
+            for action in tile.build_context_menu().actions()
+            if action.text()
+        ]
+
+    def test_menu_offers_both_streams_and_closing(
+        self, qapp: QApplication, fake_instance: FakeInstance
+    ) -> None:
+        tile = VideoTile(title="Canal 1", stream_urls=STREAM_URLS)
+
+        assert self._labels(tile) == [
+            "Stream principal",
+            "Substream",
+            "Fechar célula",
+        ]
+        tile.close_stream()
+
+    def test_menu_marks_the_stream_in_use(
+        self, qapp: QApplication, fake_instance: FakeInstance
+    ) -> None:
+        tile = VideoTile(title="Canal 1", stream_urls=STREAM_URLS)
+
+        checked = [
+            action.text()
+            for action in tile.build_context_menu().actions()
+            if action.isChecked()
+        ]
+
+        assert checked == ["Substream"]
+        tile.close_stream()
+
+    def test_menu_only_offers_streams_the_cell_has(
+        self, qapp: QApplication, fake_instance: FakeInstance
+    ) -> None:
+        tile = VideoTile(
+            title="Canal 1", stream_urls={StreamType.SUB: STREAM_URLS[StreamType.SUB]}
+        )
+
+        assert "Stream principal" not in self._labels(tile)
+        tile.close_stream()
+
+    def test_choosing_a_stream_emits_the_request(
+        self, qapp: QApplication, fake_instance: FakeInstance
+    ) -> None:
+        tile = VideoTile(title="Canal 1", stream_urls=STREAM_URLS)
+        requested: list[StreamType] = []
+        tile.streamTypeRequested.connect(requested.append)
+
+        for action in tile.build_context_menu().actions():
+            if action.text() == "Stream principal":
+                action.trigger()
+
+        assert requested == [StreamType.MAIN]
+        tile.close_stream()
+
+    def test_closing_from_the_menu_asks_the_grid_to_remove_the_cell(
+        self, qapp: QApplication, fake_instance: FakeInstance
+    ) -> None:
+        tile = VideoTile(title="Canal 1", stream_urls=STREAM_URLS)
+        closed: list[bool] = []
+        tile.closeRequested.connect(lambda: closed.append(True))
+
+        for action in tile.build_context_menu().actions():
+            if action.text() == "Fechar célula":
+                action.trigger()
+
+        assert closed == [True]
+        tile.close_stream()
+
+
 class TestEmptyCell:
     def test_empty_cells_say_what_to_do(self, qapp: QApplication) -> None:
         cell = _EmptyCell()

@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
-import sqlite3
-from collections.abc import Iterator
-from pathlib import Path
+import os
 
-import keyring
-import keyring.backend
-import pytest
-from fakes import FakeInstance
-from PySide6.QtWidgets import QApplication
+# The suite must run without a display (CI, ssh session, tty). Set before
+# PySide6 is imported anywhere, since Qt reads this at QApplication
+# construction; an explicit value in the environment still wins.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+import sqlite3  # noqa: E402
+from collections.abc import Iterator  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+import keyring  # noqa: E402
+import keyring.backend  # noqa: E402
+import pytest  # noqa: E402
+from fakes import FakeInstance  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from camview.database.connection import initialize_database
 

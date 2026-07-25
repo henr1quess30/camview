@@ -83,8 +83,13 @@ tela e registro no log, nunca um fechamento inesperado.
 Rodar os testes:
 
 ```bash
-pytest
+pytest                                    # 324 testes, roda sem display
+pytest --cov=camview --cov-report=term-missing   # cobertura (92%)
 ```
+
+A suíte nunca abre janela nem acessa a rede: usa `QT_QPA_PLATFORM=offscreen`
+automaticamente, um libVLC falso, um keyring em memória e endereços da
+faixa de documentação (`192.0.2.x`). Nenhuma senha real em fixtures.
 
 ### Estrutura do projeto
 

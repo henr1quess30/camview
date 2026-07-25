@@ -118,6 +118,81 @@ class TestDiscoverChannels:
             discover_channels("192.0.2.10", "admin", "test-password")
 
 
+class TestFetchErrorMapping:
+    """Every HTTP failure must become a DiscoveryError the UI can show."""
+
+    @staticmethod
+    def _opener_raising(exc: Exception) -> object:
+        class FakeOpener:
+            def open(self, *_args: object, **_kwargs: object) -> object:
+                raise exc
+
+        return FakeOpener()
+
+    def _fetch_with(
+        self, monkeypatch: pytest.MonkeyPatch, exc: Exception
+    ) -> Exception:
+        monkeypatch.setattr(
+            hikvision.urllib.request,
+            "build_opener",
+            lambda *_handlers: self._opener_raising(exc),
+        )
+        with pytest.raises(DiscoveryError) as caught:
+            hikvision._fetch("192.0.2.10", 80, "/ISAPI/x", "admin", "senha-falsa")
+        return caught.value
+
+    @pytest.mark.parametrize("code", [401, 403])
+    def test_auth_failures_name_the_credentials(
+        self, monkeypatch: pytest.MonkeyPatch, code: int
+    ) -> None:
+        error = hikvision.urllib.error.HTTPError(
+            "http://192.0.2.10/", code, "Unauthorized", {}, None  # type: ignore[arg-type]
+        )
+
+        message = str(self._fetch_with(monkeypatch, error))
+
+        assert "senha" in message.lower()
+
+    def test_other_http_errors_report_the_status(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        error = hikvision.urllib.error.HTTPError(
+            "http://192.0.2.10/", 500, "Server Error", {}, None  # type: ignore[arg-type]
+        )
+
+        assert "500" in str(self._fetch_with(monkeypatch, error))
+
+    def test_network_failures_are_wrapped(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        message = str(self._fetch_with(monkeypatch, TimeoutError("timed out")))
+
+        assert "Não foi possível acessar o dispositivo" in message
+
+    def test_a_successful_response_is_decoded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        class FakeResponse:
+            def read(self) -> bytes:
+                return "<id>101</id>".encode("utf-8")
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                return None
+
+        class FakeOpener:
+            def open(self, *_args: object, **_kwargs: object) -> FakeResponse:
+                return FakeResponse()
+
+        monkeypatch.setattr(
+            hikvision.urllib.request, "build_opener", lambda *_h: FakeOpener()
+        )
+
+        assert hikvision._fetch("192.0.2.10", 80, "/x", "admin", "x") == "<id>101</id>"
+
+
 class TestParsingHelpers:
     def test_collapses_main_and_sub_stream_ids(self) -> None:
         assert hikvision._streamable_channel_numbers(STREAMING_XML) == [1, 2, 4]

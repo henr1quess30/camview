@@ -11,7 +11,12 @@ from collections.abc import Iterator
 
 import pytest
 
-from camview.services.stream_manager import PlaybackOptions, get_vlc_instance, reset_vlc_instance
+from camview.services.stream_manager import (
+    PlaybackOptions,
+    displayed_picture_count,
+    get_vlc_instance,
+    reset_vlc_instance,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -36,6 +41,55 @@ class TestGetVlcInstance:
         reset_vlc_instance()
         second = get_vlc_instance()
         assert first is not second
+
+
+class TestDisplayedPictureCount:
+    """The watchdog's only evidence — and it must never raise."""
+
+    def test_unknown_when_the_player_has_no_media(self) -> None:
+        class PlayerWithoutMedia:
+            def get_media(self) -> None:
+                return None
+
+        assert displayed_picture_count(PlayerWithoutMedia()) is None
+
+    def test_unknown_instead_of_raising_on_a_foreign_player(self) -> None:
+        """A fake or unexpected player must read as 'unknown', not crash."""
+
+        class NotAPlayer:
+            pass
+
+        assert displayed_picture_count(NotAPlayer()) is None
+
+    def test_unknown_when_libvlc_refuses_the_stats(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import vlc
+
+        class PlayerWithMedia:
+            def get_media(self) -> object:
+                return object()
+
+        monkeypatch.setattr(vlc, "libvlc_media_get_stats", lambda *_a: False)
+
+        assert displayed_picture_count(PlayerWithMedia()) is None
+
+    def test_reads_the_counter_when_available(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import vlc
+
+        class PlayerWithMedia:
+            def get_media(self) -> object:
+                return object()
+
+        def fill(_media: object, stats_ref: object) -> bool:
+            stats_ref._obj.displayed_pictures = 4242  # type: ignore[attr-defined]
+            return True
+
+        monkeypatch.setattr(vlc, "libvlc_media_get_stats", fill)
+
+        assert displayed_picture_count(PlayerWithMedia()) == 4242
 
 
 class TestPlaybackOptions:
