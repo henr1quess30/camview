@@ -16,7 +16,7 @@ validada antes de avançar para a próxima.
 - [x] Fase 2 — Cadastro de NVR e geração de canais Hikvision
 - [x] Fase 3 — Célula de vídeo única
 - [x] Fase 4 — Mosaico
-- [ ] Fase 5 — Layouts salvos
+- [x] Fase 5 — Layouts salvos
 - [ ] Fase 6 — Restauração de estado ao abrir
 - [ ] Fase 7 — Tela de configurações
 - [ ] Fase 8 — Tratamento de erros
@@ -199,11 +199,44 @@ Também verificado: maximizar/restaurar mantém o vídeo rodando, e todos
 os players são liberados ao fechar a janela. As resoluções observadas
 (640x360, 704x480, 352x240) confirmam que o substream está sendo usado.
 
-## Fase 5 — Layouts salvos
+## Fase 5 — Layouts salvos ✅
 
-CRUD de layouts (criar, renomear, sobrescrever, excluir, carregar),
-persistindo grade + câmera/stream por posição nas tabelas `layouts` e
-`layout_items`.
+CRUD de layouts persistindo grade + câmera/stream por posição nas tabelas
+`layouts` e `layout_items` (criadas na Fase 1). Menu **Layouts** com
+"Salvar" (`Ctrl+S`), "Salvar como..." (`Ctrl+Shift+S`),
+"Gerenciar layouts..." e a lista dos layouts salvos para carregar num
+clique. `LayoutManagerDialog` faz renomear/excluir. Único método novo no
+repositório: `update_shape()`, para sobrescrever a grade de um layout
+existente.
+
+### Decisões de implementação
+
+- **Salvar grava o stream do mosaico, não o da tela cheia.** Maximizar
+  sobe a célula para o stream principal (Fase 4) — isso é estado de
+  visualização, não configuração. `VideoGrid.mosaic_stream_type()`
+  devolve o stream que a célula usa *no mosaico*, senão salvar com uma
+  célula maximizada transformaria aquela câmera em stream principal
+  permanentemente.
+- **Uma consulta de senha por NVR ao carregar**, não por célula — mesmo
+  motivo de `_open_nvr_mosaic`: um layout com 16 câmeras de um NVR sem
+  senha geraria 16 avisos idênticos.
+- **Carregar tolera câmeras que sumiram**: posições fora da grade, câmeras
+  ou NVRs excluídos são contados e reportados na status bar em vez de
+  quebrar o carregamento inteiro.
+- **`Ctrl+S` sobrescreve o layout carregado sem perguntar**; só pede nome
+  quando não há layout ativo. O nome do layout na tela vai para o título
+  da janela ("CamView — Fábrica"), e abrir um NVR inteiro limpa esse
+  vínculo, já que substitui a tela toda.
+- **Menu reconstruído no `aboutToShow`**, porque a lista de layouts muda
+  pelo diálogo de gerenciamento e por "Salvar como".
+
+### Validação real (NVR Hikvision ao vivo)
+
+4 câmeras em células não contíguas (0, 1, 4, 5) de uma grade 3x3,
+salvas, mosaico limpo e grade forçada para 2x2; ao recarregar o layout a
+grade voltou para 3x3 e as **4/4 células voltaram a reproduzir** nas
+mesmas posições e resoluções (640x360, 704x480). Layout de teste
+removido do banco ao final.
 
 ## Fase 6 — Restauração de estado ao abrir
 

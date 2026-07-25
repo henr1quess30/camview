@@ -173,6 +173,17 @@ class TestLayoutRepository:
         repo.delete(created.id)  # type: ignore[arg-type]
         assert repo.get(created.id) is None  # type: ignore[arg-type]
 
+    def test_update_shape_persists_new_grid(
+        self, connection: sqlite3.Connection
+    ) -> None:
+        repo = LayoutRepository(connection)
+        created = repo.create(Layout(name="Portaria", rows=2, columns=2))
+
+        repo.update_shape(created.id, 3, 3)  # type: ignore[arg-type]
+
+        reloaded = repo.get(created.id)  # type: ignore[arg-type]
+        assert (reloaded.rows, reloaded.columns) == (3, 3)  # type: ignore[union-attr]
+
     def test_set_items_replaces_existing(self, connection: sqlite3.Connection) -> None:
         nvr = NvrRepository(connection).create(make_nvr())
         cam_repo = CameraRepository(connection)

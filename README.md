@@ -95,8 +95,8 @@ src/camview/
 Em desenvolvimento incremental. Veja [PLAN.md](PLAN.md) para o roteiro
 completo de fases e o que já foi concluído.
 
-Fase atual: **Fase 4 concluída** — mosaico funcionando, validado contra
-um NVR Hikvision real com até 16 streams simultâneos.
+Fase atual: **Fase 5 concluída** — mosaico e layouts salvos, validados
+contra NVRs Hikvision reais com até 16 streams simultâneos.
 
 Como usar hoje:
 
@@ -116,7 +116,22 @@ Como usar hoje:
 Mosaicos usam substream automaticamente (menos banda e CPU); a grade 1x1
 respeita o stream padrão configurado no NVR.
 
-Salvar e restaurar layouts vem na Fase 5.
+### Layouts salvos
+
+Monte o mosaico como quiser e guarde-o com um nome ("Fábrica", "Portaria"):
+
+- **Layouts → Salvar como...** (`Ctrl+Shift+S`) — pede o nome e grava a
+  grade, quais câmeras estão em cada célula e o stream de cada uma.
+- **Layouts → Salvar** (`Ctrl+S`) — sobrescreve o layout que está aberto
+  (o nome aparece no título da janela); se nenhum estiver aberto, pede um.
+- **Layouts → *nome do layout*** — carrega em um clique, ajustando a grade.
+- **Layouts → Gerenciar layouts...** — carregar, renomear e excluir.
+
+Câmeras removidas depois que o layout foi salvo simplesmente não abrem — o
+resto do layout carrega normalmente e a status bar informa quantas ficaram
+de fora.
+
+Restaurar o último layout automaticamente ao abrir o app vem na Fase 6.
 
 ### Nota sobre Wayland
 

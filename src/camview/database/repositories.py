@@ -197,6 +197,18 @@ class LayoutRepository:
                 (new_name, layout_id),
             )
 
+    def update_shape(self, layout_id: int, rows: int, columns: int) -> None:
+        """Change a saved layout's grid shape (used when overwriting it)."""
+        with self._connection:
+            self._connection.execute(
+                """
+                UPDATE layouts
+                SET rows = ?, columns = ?, updated_at = datetime('now')
+                WHERE id = ?
+                """,
+                (rows, columns, layout_id),
+            )
+
     def delete(self, layout_id: int) -> None:
         with self._connection:
             self._connection.execute("DELETE FROM layouts WHERE id = ?", (layout_id,))

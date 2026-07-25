@@ -1,14 +1,15 @@
 """CamView's main window: sidebar, mosaic area, toolbar, status bar.
 
-The mosaic grid and layout selector are still placeholders — wired up
-for real in Phase 4. NVR registration (sidebar tree, add/edit/remove)
-is real as of Phase 2.
+Owns the wiring between the device tree, the mosaic and the database:
+turning a camera id into an RTSP URL, opening a whole NVR at once, and
+saving/restoring named layouts.
 """
 
 from __future__ import annotations
 
 import logging
 import sqlite3
+from functools import partial
 
 from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDockWidget,
+    QInputDialog,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -24,8 +26,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from camview.database.repositories import CameraRepository, NvrRepository
+from camview.database.repositories import (
+    CameraRepository,
+    LayoutRepository,
+    NvrRepository,
+)
 from camview.models.camera import Camera, StreamType
+from camview.models.layout import Layout, LayoutItem
 from camview.models.nvr import Nvr
 from camview.services.credentials import (
     CredentialsError,
@@ -35,6 +42,7 @@ from camview.services.credentials import (
 )
 from camview.services.hikvision import DiscoveredChannel
 from camview.services.rtsp import build_channel_url, generate_missing_channel_cameras
+from camview.ui.dialogs.layout_dialog import LayoutManagerDialog
 from camview.ui.dialogs.nvr_dialog import NvrDialog
 from camview.ui.widgets.device_tree import CAMERA_ID_ROLE, NVR_ID_ROLE, DeviceTree
 from camview.ui.widgets.video_grid import GRID_SHAPES, VideoGrid, smallest_shape_for
@@ -59,6 +67,9 @@ class MainWindow(QMainWindow):
         self._connection = connection
         self._nvr_repository = NvrRepository(connection)
         self._camera_repository = CameraRepository(connection)
+        self._layout_repository = LayoutRepository(connection)
+        #: Saved layout currently on screen, if any — the target of "Salvar".
+        self._current_layout_id: int | None = None
 
         self._build_sidebar()
         self._build_central_widget()
@@ -120,6 +131,12 @@ class MainWindow(QMainWindow):
         add_nvr_action = QAction("&Adicionar NVR...", self)
         add_nvr_action.triggered.connect(self._add_nvr)
         nvr_menu.addAction(add_nvr_action)
+
+        self.layouts_menu = self.menuBar().addMenu("&Layouts")
+        # Rebuilt on open: saved layouts change from the manager dialog and
+        # from "Salvar como", so a menu built once would go stale.
+        self.layouts_menu.aboutToShow.connect(self._rebuild_layouts_menu)
+        self._rebuild_layouts_menu()
 
     def _build_statusbar(self) -> None:
         self.statusBar().showMessage("Ready")
@@ -254,6 +271,186 @@ class MainWindow(QMainWindow):
         self.device_tree.refresh()
         self.statusBar().showMessage(f"NVR '{nvr.name}' removido.", 5000)
 
+    # ------------------------------------------------------------------
+    # Saved layouts
+    # ------------------------------------------------------------------
+
+    def _rebuild_layouts_menu(self) -> None:
+        """Rebuild the Layouts menu, including one entry per saved layout."""
+        menu = self.layouts_menu
+        menu.clear()
+
+        save_action = menu.addAction("&Salvar layout")
+        save_action.setShortcut(QKeySequence.StandardKey.Save)
+        save_action.triggered.connect(self._save_layout)
+
+        save_as_action = menu.addAction("Salvar &como...")
+        save_as_action.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        save_as_action.triggered.connect(self._save_layout_as)
+
+        manage_action = menu.addAction("&Gerenciar layouts...")
+        manage_action.triggered.connect(self._manage_layouts)
+
+        layouts = self._layout_repository.list_all()
+        if not layouts:
+            return
+
+        menu.addSeparator()
+        for layout in layouts:
+            action = menu.addAction(layout.name)
+            action.setCheckable(True)
+            action.setChecked(layout.id == self._current_layout_id)
+            action.triggered.connect(partial(self._load_layout, layout.id))
+
+    def _set_current_layout(self, layout: Layout | None) -> None:
+        """Track which saved layout is on screen and show it in the title."""
+        self._current_layout_id = layout.id if layout is not None else None
+        title = "CamView" if layout is None else f"CamView — {layout.name}"
+        self.setWindowTitle(title)
+
+    def _capture_layout_items(self, layout_id: int) -> list[LayoutItem]:
+        """Snapshot the mosaic as layout items, one per occupied cell."""
+        items: list[LayoutItem] = []
+        for position, tile in sorted(self.video_grid.tiles().items()):
+            if tile.camera_id is None:
+                continue
+            stream_type = (
+                self.video_grid.mosaic_stream_type(position) or tile.stream_type
+            )
+            items.append(
+                LayoutItem(
+                    layout_id=layout_id,
+                    camera_id=tile.camera_id,
+                    position=position,
+                    stream_type=stream_type,
+                )
+            )
+        return items
+
+    def _save_layout(self) -> None:
+        """Overwrite the layout on screen, or ask for a name if there is none."""
+        layout = (
+            None
+            if self._current_layout_id is None
+            else self._layout_repository.get(self._current_layout_id)
+        )
+        if layout is None:
+            self._save_layout_as()
+            return
+        self._write_layout(layout.name, existing=layout)
+
+    def _save_layout_as(self) -> None:
+        if not self.video_grid.tiles():
+            self.statusBar().showMessage(
+                "Nada para salvar — o mosaico está vazio.", 5000
+            )
+            return
+
+        name, confirmed = QInputDialog.getText(
+            self, "Salvar layout", "Nome do layout:"
+        )
+        name = name.strip()
+        if not confirmed or not name:
+            return
+
+        existing = self._layout_repository.get_by_name(name)
+        if existing is not None:
+            overwrite = QMessageBox.question(
+                self,
+                "CamView",
+                f"Já existe um layout chamado '{name}'. Sobrescrever?",
+            )
+            if overwrite != QMessageBox.StandardButton.Yes:
+                return
+
+        self._write_layout(name, existing=existing)
+
+    def _write_layout(self, name: str, existing: Layout | None) -> None:
+        """Persist the current mosaic under ``name``, creating or replacing."""
+        if not self.video_grid.tiles():
+            self.statusBar().showMessage(
+                "Nada para salvar — o mosaico está vazio.", 5000
+            )
+            return
+
+        rows, columns = self.video_grid.rows, self.video_grid.columns
+        try:
+            if existing is None:
+                layout = self._layout_repository.create(
+                    Layout(name=name, rows=rows, columns=columns)
+                )
+            else:
+                layout = existing
+                self._layout_repository.update_shape(layout.id, rows, columns)  # type: ignore[arg-type]
+                layout.rows, layout.columns = rows, columns
+            self._layout_repository.set_items(
+                layout.id,  # type: ignore[arg-type]
+                self._capture_layout_items(layout.id),  # type: ignore[arg-type]
+            )
+        except sqlite3.Error as exc:
+            logger.error("Failed to save layout '%s': %s", name, exc)
+            QMessageBox.critical(self, "CamView", str(exc))
+            return
+
+        self._set_current_layout(layout)
+        self.statusBar().showMessage(f"Layout '{layout.name}' salvo.", 5000)
+
+    def _load_layout(self, layout_id: int) -> None:
+        """Replace the mosaic with a saved layout's grid and cameras."""
+        layout = self._layout_repository.get(layout_id)
+        if layout is None:
+            self.statusBar().showMessage("Esse layout não existe mais.", 5000)
+            return
+
+        items = self._layout_repository.get_items(layout_id)
+        self.video_grid.clear()
+        self._apply_grid_shape(layout.rows, layout.columns)
+
+        # One password lookup per NVR, not per cell: a device with no stored
+        # password must warn once, and every cell would hit the keyring.
+        passwords: dict[int, str | None] = {}
+        opened = 0
+        skipped = 0
+        for item in items:
+            if item.position >= self.video_grid.cell_count:
+                skipped += 1
+                continue
+            camera = self._camera_repository.get(item.camera_id)
+            if camera is None:
+                skipped += 1
+                continue
+            nvr = self._nvr_repository.get(camera.nvr_id)
+            if nvr is None:
+                skipped += 1
+                continue
+            if nvr.id not in passwords:
+                passwords[nvr.id] = self._nvr_password_or_warn(nvr)  # type: ignore[index]
+            password = passwords[nvr.id]  # type: ignore[index]
+            if password is None:
+                skipped += 1
+                continue
+            self._place_camera(camera, nvr, password, item.position, item.stream_type)
+            opened += 1
+
+        self._set_current_layout(layout)
+        message = f"Layout '{layout.name}': {opened} câmera(s)."
+        if skipped:
+            message += f" {skipped} não pôde(puderam) ser aberta(s)."
+        self.statusBar().showMessage(message, 5000)
+
+    def _manage_layouts(self) -> None:
+        dialog = LayoutManagerDialog(self._layout_repository, parent=self)
+        accepted = dialog.exec() == QDialog.DialogCode.Accepted
+
+        # The dialog may have renamed or deleted the layout on screen.
+        if self._current_layout_id is not None:
+            self._set_current_layout(
+                self._layout_repository.get(self._current_layout_id)
+            )
+
+        if accepted and dialog.selected_layout_id is not None:
+            self._load_layout(dialog.selected_layout_id)
+
     def _on_device_tree_item_double_clicked(
         self, item: QTreeWidgetItem, column: int
     ) -> None:
@@ -381,6 +578,9 @@ class MainWindow(QMainWindow):
         rows, columns = smallest_shape_for(len(cameras))
         self.video_grid.clear()
         self._apply_grid_shape(rows, columns)
+        # This wholesale replaces the screen, so it is no longer the saved
+        # layout that was loaded — keep the window title honest.
+        self._set_current_layout(None)
 
         visible = cameras[: rows * columns]
         stream_type = self._mosaic_stream_type(nvr.default_stream)

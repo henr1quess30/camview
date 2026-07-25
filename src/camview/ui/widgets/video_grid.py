@@ -146,6 +146,19 @@ class VideoGrid(QWidget):
     def tiles(self) -> dict[int, VideoTile]:
         return dict(self._tiles)
 
+    def mosaic_stream_type(self, position: int) -> StreamType | None:
+        """Which stream cell ``position`` uses *in the mosaic*.
+
+        While a cell is maximized its live stream is bumped to
+        :attr:`StreamType.MAIN`, which is a viewing state, not the cell's
+        configuration. Saving a layout must record the mosaic stream, so
+        loading it back doesn't turn every cell into a main stream.
+        """
+        tile = self._tiles.get(position)
+        if tile is None:
+            return None
+        return self._mosaic_stream_types.get(position, tile.stream_type)
+
     def place_tile(self, position: int, tile: VideoTile) -> None:
         """Put ``tile`` at ``position``, replacing whatever was there."""
         if not 0 <= position < self.cell_count:
