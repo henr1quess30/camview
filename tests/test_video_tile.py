@@ -337,6 +337,25 @@ class TestStallWatchdog:
         assert tile._healthy_timer.isActive() is False
 
 
+class TestDeferredFirstConnect:
+    def test_closing_before_the_first_connect_opens_nothing(
+        self, qapp: QApplication, fake_instance: FakeInstance
+    ) -> None:
+        """A cell removed right after being placed must not open a stream.
+
+        The first connect is deferred until the video widget is on screen;
+        without cancelling it, the stream would start after the tile was
+        already discarded and leak a player nobody can release.
+        """
+        tile = make_tile(qapp)
+        assert tile._initial_connect_timer.isActive() is True
+
+        tile.close_stream()
+        qapp.processEvents()
+
+        assert fake_instance.players == []
+
+
 class TestCloseStream:
     def test_stops_and_releases_the_player(
         self, qapp: QApplication, fake_instance: FakeInstance

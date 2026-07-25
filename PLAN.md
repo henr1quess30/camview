@@ -412,6 +412,34 @@ falhou.
 - **Uma lacuna real encontrada pelos próprios testes:** um erro de banco
   ao ler as configurações derrubava o construtor da `MainWindow`, ou seja,
   o app inteiro. Agora cai nos padrões.
+- **Bug de produção descoberto ao investigar acesso de rede nos testes:**
+  a primeira conexão de uma célula é adiada (`QTimer`) até o widget de
+  vídeo existir na tela, mas `close_stream()` não cancelava esse
+  agendamento. Uma célula fechada logo após ser criada ainda abria o
+  stream depois, deixando um player sem dono. O timer agora pertence ao
+  tile e é cancelado no fechamento — e a suíte deixou de tocar a rede.
+
+### Investigação da pista "só o substream congela" (inconclusiva)
+
+Medições feitas no `192.0.2.4`, comparando os mesmos canais nos dois
+streams e mosaicos cheios:
+
+- 16 células por 90s: **0 congeladas**; por 3 e 4 minutos em outra
+  execução: 0 congeladas.
+- A única ocorrência real capturada até agora foi uma célula de
+  **substream** parada por mais de 2 minutos (registrada na Fase 3).
+- **Hipótese descartada por medição:** as mensagens
+  `failed to create video output` e `buffer deadlock prevented` do libVLC
+  apareceram exatamente **16 vezes para 16 células** numa execução em que
+  **todas as 16 exibiram normalmente** — é o ruído de inicialização já
+  conhecido (o libVLC tenta caminhos de hardware, falha e cai para
+  software), não a causa do congelamento.
+
+Ou seja: o relato do usuário continua plausível, mas a amostra ainda é
+pequena demais para afirmar que o substream é a causa. O sintoma já está
+coberto pelo watchdog (detecta em 10s e reconecta), então isto fica como
+observação, não como pendência bloqueante. Próximo passo, se voltar a
+acontecer: rodar a comparação sub × principal por algumas horas.
 
 ## Fase 9 — Polimento de UI ✅
 

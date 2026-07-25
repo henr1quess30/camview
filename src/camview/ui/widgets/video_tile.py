@@ -162,8 +162,14 @@ class VideoTile(QWidget):
         self._healthy_timer.timeout.connect(self._backoff.reset)
 
         # Deferred so the video widget is realized/mapped on screen before
-        # libVLC is asked to embed into its window id.
-        QTimer.singleShot(0, self._connect)
+        # libVLC is asked to embed into its window id. Owned by the tile
+        # rather than fired by QTimer.singleShot: a cell closed before this
+        # runs would otherwise still open a stream, leaving a player nobody
+        # holds a reference to.
+        self._initial_connect_timer = QTimer(self)
+        self._initial_connect_timer.setSingleShot(True)
+        self._initial_connect_timer.timeout.connect(self._connect)
+        self._initial_connect_timer.start(0)
 
     def _build_ui(self) -> None:
         self._status_dot = QLabel()
@@ -514,6 +520,7 @@ class VideoTile(QWidget):
         call ``closeEvent`` for non-top-level widgets, so this cleanup
         cannot happen automatically.
         """
+        self._initial_connect_timer.stop()
         self._reconnect_timer.stop()
         self._stall_timer.stop()
         self._healthy_timer.stop()
