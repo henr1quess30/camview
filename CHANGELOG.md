@@ -6,6 +6,19 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
 ### Adicionado
 
+- **Câmera avulsa** como tipo de dispositivo: o cadastro passa a ter um
+  seletor **NVR/DVR** ou **Câmera**. Escolhendo câmera, some a quantidade
+  de canais, ela aparece como uma única linha na lista lateral (em vez de
+  pasta com um item dentro) e o duplo clique **abre em tela cheia**, já
+  que não há mosaico a montar. Canal de NVR continua indo para a próxima
+  célula livre.
+- **Consulta de canais sem transmissão ao próprio NVR.** Depois de duas
+  falhas seguidas, o app pergunta ao equipamento (ISAPI) se aquele canal
+  está online. Se o NVR responde que não — ou nem lista o canal — a
+  célula deixa de tentar a cada poucos segundos, explica o motivo e passa
+  a tentar de 5 em 5 minutos, para voltar sozinha quando a câmera for
+  consertada.
+
 - **Zoom digital** com a roda do mouse, aproximando o ponto sob o cursor
   (até 8x), e pelos atalhos `+`, `-` e `0`. Implementado por recorte
   (`crop geometry`) do libVLC, o que mantém a célula preenchida em

@@ -80,11 +80,27 @@ def _apply_v1_initial_schema(connection: sqlite3.Connection) -> None:
     connection.executescript(_SCHEMA_V1)
 
 
+def _apply_v2_device_type(connection: sqlite3.Connection) -> None:
+    """Tell an NVR apart from a standalone camera.
+
+    Existing rows keep the default, which is what they were: everything
+    registered before this column existed was registered as an NVR.
+    """
+    connection.execute(
+        "ALTER TABLE nvrs ADD COLUMN device_type TEXT NOT NULL DEFAULT 'nvr'"
+    )
+
+
 MIGRATIONS: list[Migration] = [
     Migration(
         version=1,
         description="Initial schema: nvrs, cameras, layouts, layout_items, settings",
         apply=_apply_v1_initial_schema,
+    ),
+    Migration(
+        version=2,
+        description="Add nvrs.device_type to support standalone cameras",
+        apply=_apply_v2_device_type,
     ),
 ]
 

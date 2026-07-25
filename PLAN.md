@@ -24,6 +24,47 @@ validada antes de avançar para a próxima.
 - [x] Fase 10 — Testes
 - [x] Fase 11 — Empacotamento e documentação final
 
+## Depois da 0.1.0 — câmera avulsa e canais mortos (pedido do usuário)
+
+Observação do usuário: "fizemos pensando em NVR né — se eu adicionar uma
+câmera sozinha ela não fica em tela cheia".
+
+- **`DeviceType` (`nvr` | `camera`)** na tabela `nvrs`, via migração 2
+  (`ALTER TABLE ... DEFAULT 'nvr'`, então o que já estava cadastrado
+  continua sendo NVR). O nome da classe segue `Nvr` por ser a tabela
+  histórica; o campo é que diz o que a linha representa.
+- Câmera avulsa: sem quantidade de canais no cadastro, **uma linha só** na
+  árvore lateral (pasta com um único filho é ruído) e duplo clique abrindo
+  em **1x1**. Canal de NVR continua indo para a próxima célula livre —
+  senão montar mosaico clicando em várias câmeras deixaria de funcionar.
+
+### Canais sem transmissão (segunda parte do pedido)
+
+`channel_online_status()` pergunta ao gravador, via
+`/ISAPI/ContentMgmt/InputProxy/channels/status`, quais canais têm câmera
+online. Depois de 2 falhas seguidas a célula dispara essa consulta (uma
+por dispositivo a cada 2 min, em `QThread`); se o equipamento diz que o
+canal está offline — ou nem o lista — a célula é **estacionada**: explica
+o motivo e passa a tentar a cada 5 minutos, em vez de a cada 30 segundos.
+
+Medido nos equipamentos do usuário: `NVR A` canal 12, `NVR H` canal 14,
+`NVR D` canal 1, `NVR G` canal 1 offline; `NVR C` lista 11 canais
+contra 16 cadastrados.
+
+**Dois bugs encontrados só porque a validação foi feita no equipamento
+real, ambos invisíveis nos testes que eu tinha:**
+
+1. `Signal(int, dict)` marshalla o dicionário como `QVariantMap`, que só
+   aceita chaves de texto — como as chaves são números de canal, o mapa
+   chegava **vazio** do outro lado da thread (`_pythonToCppCopy: Cannot
+   copy-convert (dict) to C++`). Declarado como `Signal(int, object)`.
+2. Estacionar a célula não bastava: o erro da tentativa que já estava em
+   voo chegava logo depois e restaurava o backoff curto. Daí o estado
+   explícito `_parked`, limpo só quando uma nova tentativa começa.
+
+Validado ao vivo no `NVR A`: 15 células reproduzindo, 1 estacionada com
+"O NVR informa que este canal está sem transmissão", 0 em loop de retry.
+
 ## Depois da 0.1.0 — zoom, navegação e atalhos (pedido do usuário)
 
 - **Zoom digital por recorte.** `VideoTile.zoom_by()` calcula uma região

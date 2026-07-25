@@ -86,6 +86,15 @@ HEALTHY_PLAYBACK_S = 30.0
 #: starts pointing at credentials.
 CREDENTIAL_HINT_AFTER_FAILURES = 5
 
+#: Consecutive failures before asking the device whether this channel is
+#: even transmitting. Deliberately early: the answer costs one read-only
+#: HTTP request and can stop a pointless retry loop.
+STATUS_CHECK_AFTER_FAILURES = 2
+
+#: How long to wait before retrying a channel the device itself reports as
+#: offline. Long, but never "never": cameras come back.
+OFFLINE_RETRY_S = 300
+
 #: Digital zoom limits. 1.0 is the whole picture; 8x is where a 640x360
 #: substream is already a handful of pixels.
 MIN_ZOOM = 1.0
@@ -112,6 +121,9 @@ class VideoTile(QWidget):
     clicked = Signal()
     #: The user picked a stream for this cell from its context menu.
     streamTypeRequested = Signal(object)
+    #: This cell has failed enough times to be worth asking the device
+    #: whether the channel is transmitting at all.
+    repeatedFailures = Signal()
 
     _playingSignal = Signal()
     _errorSignal = Signal(str)
@@ -142,6 +154,9 @@ class VideoTile(QWidget):
         self._backoff = ReconnectBackoff(backoff_schedule)
         #: Failures since the stream last played, for the credential hint.
         self._consecutive_failures = 0
+        #: Parked: the device says this channel has no signal, so the cell
+        #: waits on a long retry instead of the usual backoff.
+        self._parked = False
         #: Digital zoom: factor plus the point (0..1 of the picture) it is
         #: centred on, so zooming follows the mouse instead of the middle.
         self._zoom = MIN_ZOOM
@@ -308,6 +323,7 @@ class VideoTile(QWidget):
             self._player.video_set_key_input(False)
             self._player.set_xwindow(int(self.video_widget.winId()))
 
+        self._parked = False
         media = instance.media_new(self.url, *self._playback_options.to_media_options())
         self._player.set_media(media)
         # The player holds its own reference now, so drop ours. Without this
@@ -389,7 +405,19 @@ class VideoTile(QWidget):
         self._stall_timer.stop()
         self._healthy_timer.stop()
 
+        if self._parked:
+            # A failure still in flight when the cell was parked must not
+            # drag it back to the fast retry loop — the device already said
+            # there is nothing to receive.
+            logger.debug("Tile '%s' is parked; ignoring '%s'", self.title, message)
+            return
+
         self._consecutive_failures += 1
+        # Every failure past the threshold, not just the one that crosses
+        # it: the first query may be throttled or come back empty, and a
+        # channel that stays dark deserves another ask.
+        if self._consecutive_failures >= STATUS_CHECK_AFTER_FAILURES:
+            self.repeatedFailures.emit()
         if self._consecutive_failures >= CREDENTIAL_HINT_AFTER_FAILURES:
             message = f"{message}\n\n{CREDENTIAL_HINT}"
 
@@ -413,6 +441,29 @@ class VideoTile(QWidget):
             ConnectionStatus.ERROR, f"{message}\nReconectando em {delay}s..."
         )
         self._reconnect_timer.start(delay * 1000)
+
+    @property
+    def is_parked(self) -> bool:
+        """Waiting on the long retry because the device reported no signal."""
+        return self._parked
+
+    def mark_channel_unavailable(self, reason: str) -> None:
+        """Stop hammering a channel the device says is not transmitting.
+
+        Retrying every few seconds cannot help — the recorder has no
+        picture to give — so the cell says why and tries again in
+        :data:`OFFLINE_RETRY_S`, which is what makes it come back on its
+        own once the camera is repaired.
+        """
+        logger.info("Tile '%s' parked: %s", self.title, reason)
+        self._parked = True
+        self._stall_timer.stop()
+        self._healthy_timer.stop()
+        self._set_status(
+            ConnectionStatus.ERROR,
+            f"{reason}\n\nNova tentativa em {OFFLINE_RETRY_S // 60} min.",
+        )
+        self._reconnect_timer.start(OFFLINE_RETRY_S * 1000)
 
     @property
     def url(self) -> str:

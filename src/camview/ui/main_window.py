@@ -12,8 +12,9 @@ import binascii
 import logging
 import sqlite3
 from functools import partial
+from time import monotonic
 
-from PySide6.QtCore import QByteArray, QSignalBlocker, Qt
+from PySide6.QtCore import QByteArray, QSignalBlocker, Qt, QThread, Signal
 from PySide6.QtGui import QAction, QCloseEvent, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QComboBox,
@@ -45,7 +46,7 @@ from camview.services.credentials import (
     get_nvr_password,
     set_nvr_password,
 )
-from camview.services.hikvision import DiscoveredChannel
+from camview.services.hikvision import DiscoveredChannel, channel_online_status
 from camview.services.rtsp import build_channel_url, generate_missing_channel_cameras
 from camview.services.settings import (
     load_settings,
@@ -58,7 +59,7 @@ from camview.ui.dialogs.nvr_dialog import NvrDialog
 from camview.ui.dialogs.settings_dialog import SettingsDialog
 from camview.ui.widgets.device_tree import CAMERA_ID_ROLE, NVR_ID_ROLE, DeviceTree
 from camview.ui.widgets.video_grid import GRID_SHAPES, VideoGrid, smallest_shape_for
-from camview.ui.widgets.video_tile import ZOOM_STEP, VideoTile
+from camview.ui.widgets.video_tile import ZOOM_STEP, ConnectionStatus, VideoTile
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,47 @@ SETTING_WINDOW_GEOMETRY = "window/geometry"
 SETTING_WINDOW_STATE = "window/state"
 SETTING_GRID_SHAPE = "mosaic/grid_shape"
 SETTING_LAST_LAYOUT_ID = "mosaic/last_layout_id"
+
+#: Minimum gap between "is this channel online?" queries to one device.
+STATUS_QUERY_INTERVAL_S = 120.0
+#: Budget for one such query; also how long closing waits for it.
+STATUS_QUERY_TIMEOUT_S = 2.5
+
+
+class _ChannelStatusWorker(QThread):
+    """Asks a recorder which of its channels are online, off the GUI thread."""
+
+    #: ``object``, not ``dict``: a ``dict`` signal argument is marshalled as
+    #: a QVariantMap, which only takes string keys — channel numbers are
+    #: ints, so the mapping arrived empty on the other side of the thread.
+    finished_with = Signal(int, object)
+
+    def __init__(
+        self,
+        nvr_id: int,
+        host: str,
+        username: str,
+        password: str,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._nvr_id = nvr_id
+        self._host = host
+        self._username = username
+        self._password = password
+
+    def run(self) -> None:
+        try:
+            status = channel_online_status(
+                self._host,
+                self._username,
+                self._password,
+                timeout=STATUS_QUERY_TIMEOUT_S,
+            )
+        except Exception as exc:  # noqa: BLE001 - a diagnostic must not crash
+            logger.warning("Channel status query failed for %s: %s", self._host, exc)
+            status = {}
+        self.finished_with.emit(self._nvr_id, status)
 
 
 def _icon(*names: str) -> QIcon:
@@ -128,6 +170,9 @@ class MainWindow(QMainWindow):
         #: libVLC availability, probed lazily and reported at most once.
         self._vlc_checked = False
         self._vlc_available = True
+        #: Throttling and ownership for the channel-status queries.
+        self._status_checked_at: dict[int, float] = {}
+        self._status_workers: set[_ChannelStatusWorker] = set()
 
         self._build_sidebar()
         self._build_central_widget()
@@ -284,6 +329,10 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self._save_session()
+        # A QThread destroyed while still running aborts the process, so
+        # give the status queries their (short) budget to come back.
+        for worker in list(self._status_workers):
+            worker.wait(int(STATUS_QUERY_TIMEOUT_S * 1000) + 1000)
         # Release every libVLC player before the widgets are torn down.
         self.video_grid.clear()
         super().closeEvent(event)
@@ -507,6 +556,16 @@ class MainWindow(QMainWindow):
             camera.channel_number
             for camera in self._camera_repository.list_by_nvr(nvr.id)  # type: ignore[arg-type]
         }
+
+        # A standalone camera is one channel by definition; whatever the
+        # device reported about channel lists does not apply to it.
+        if nvr.is_camera:
+            if existing:
+                return
+            self._camera_repository.create(
+                Camera(nvr_id=nvr.id, channel_number=1, name=nvr.name)  # type: ignore[arg-type]
+            )
+            return
 
         if discovered:
             new_cameras = [
@@ -759,6 +818,11 @@ class MainWindow(QMainWindow):
     ) -> None:
         camera_id = item.data(0, CAMERA_ID_ROLE)
         if camera_id is not None:
+            if self._is_standalone_camera(item.data(0, NVR_ID_ROLE)):
+                # There is nothing to build a mosaic out of, so a single
+                # camera takes the whole window instead of one small cell.
+                self._open_camera_fullscreen(camera_id)
+                return
             position = self.video_grid.first_free_position()
             if position is None:
                 self.statusBar().showMessage(
@@ -772,6 +836,82 @@ class MainWindow(QMainWindow):
         nvr_id = item.data(0, NVR_ID_ROLE)
         if nvr_id is not None:
             self._open_nvr_mosaic(nvr_id)
+
+    # ------------------------------------------------------------------
+    # "Is this channel even transmitting?"
+    # ------------------------------------------------------------------
+
+    def _check_channel_status(self, nvr_id: int, password: str) -> None:
+        """Ask the recorder which channels are online, at most now and then.
+
+        A cell that keeps failing may be pointed at a slot with no camera
+        in it. The recorder knows; asking it turns an endless retry loop
+        into an honest "sem transmissão" and a slow retry. Throttled per
+        device because several cells fail at once.
+        """
+        now = monotonic()
+        last = self._status_checked_at.get(nvr_id, 0.0)
+        if now - last < STATUS_QUERY_INTERVAL_S:
+            return
+        self._status_checked_at[nvr_id] = now
+
+        nvr = self._nvr_repository.get(nvr_id)
+        if nvr is None or nvr.is_camera:
+            return  # A standalone camera has no channel list to consult.
+
+        worker = _ChannelStatusWorker(nvr_id, nvr.host, nvr.username, password, self)
+        worker.finished_with.connect(self._on_channel_status)
+        worker.finished.connect(lambda: self._status_workers.discard(worker))
+        self._status_workers.add(worker)
+        worker.start()
+
+    def _on_channel_status(self, nvr_id: int, status: dict[int, bool]) -> None:
+        """Park the cells whose channel the device reports as not transmitting."""
+        if not status:
+            return  # No information is not the same as "all offline".
+
+        for position, tile in self.video_grid.tiles().items():
+            # Anything that is not playing is fair game: by the time the
+            # device answers, a failing cell has usually flipped back to
+            # "connecting" for its next doomed attempt.
+            if tile.camera_id is None or tile.status is ConnectionStatus.PLAYING:
+                continue
+            camera = self._camera_repository.get(tile.camera_id)
+            if camera is None or camera.nvr_id != nvr_id:
+                continue
+
+            online = status.get(camera.channel_number)
+            if online is True:
+                continue
+            reason = (
+                "O NVR informa que este canal está sem transmissão."
+                if online is False
+                else "Este canal não existe neste NVR."
+            )
+            logger.info(
+                "Cell %d (%s, channel %d): %s",
+                position,
+                camera.name,
+                camera.channel_number,
+                reason,
+            )
+            tile.mark_channel_unavailable(reason)
+
+    def _is_standalone_camera(self, nvr_id: int | None) -> bool:
+        if nvr_id is None:
+            return False
+        try:
+            nvr = self._nvr_repository.get(nvr_id)
+        except sqlite3.Error:
+            return False
+        return nvr is not None and nvr.is_camera
+
+    def _open_camera_fullscreen(self, camera_id: int) -> None:
+        """Show one camera on its own, filling the window."""
+        self.video_grid.clear()
+        self._apply_grid_shape(1, 1)
+        self._set_current_layout(None)
+        self._open_camera_at(camera_id, 0)
 
     def _nvr_password_or_warn(self, nvr: Nvr, quiet: bool = False) -> str | None:
         """Fetch the NVR's password, reporting to the user if unusable.
@@ -838,6 +978,9 @@ class MainWindow(QMainWindow):
             playback_options=playback_options_for(self._settings),
             reconnect_enabled=self._settings.reconnect_enabled,
             backoff_schedule=self._settings.backoff_schedule(),
+        )
+        tile.repeatedFailures.connect(
+            partial(self._check_channel_status, nvr.id, password)
         )
         self.video_grid.place_tile(position, tile)
 

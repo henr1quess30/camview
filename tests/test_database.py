@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from camview.database.connection import initialize_database
-from camview.database.migrations import apply_migrations
+from camview.database.connection import get_connection, initialize_database
+from camview.database.migrations import _SCHEMA_V1, apply_migrations
 from camview.database.repositories import (
     CameraRepository,
     LayoutRepository,
@@ -50,8 +50,33 @@ class TestMigrations:
         assert {"nvrs", "cameras", "layouts", "layout_items", "settings"} <= tables
 
     def test_sets_user_version(self, connection: sqlite3.Connection) -> None:
+        from camview.database.migrations import MIGRATIONS
+
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        assert version == 1
+        assert version == max(migration.version for migration in MIGRATIONS)
+
+    def test_upgrading_an_existing_database_keeps_its_devices(
+        self, tmp_path: Path
+    ) -> None:
+        """Migration 2 runs on a v1 database without losing what is in it."""
+        db_path = tmp_path / "old.db"
+        connection = get_connection(db_path)
+        with connection:
+            connection.executescript(_SCHEMA_V1)
+            connection.execute("PRAGMA user_version = 1")
+            connection.execute(
+                """
+                INSERT INTO nvrs (name, host, username, channel_count)
+                VALUES ('Antigo', '192.0.2.10', 'admin', 8)
+                """
+            )
+
+        apply_migrations(connection)
+
+        row = connection.execute("SELECT * FROM nvrs").fetchone()
+        assert row["name"] == "Antigo"
+        assert row["device_type"] == "nvr", "existing records were NVRs"
+        connection.close()
 
     def test_is_idempotent(self, connection: sqlite3.Connection) -> None:
         # Applying migrations again on an up-to-date DB must not raise

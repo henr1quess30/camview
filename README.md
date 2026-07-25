@@ -80,6 +80,12 @@ tela e registro no log, nunca um fechamento inesperado.
 - **Uma célula em vermelho** mostra o motivo e reconecta sozinha, com
   intervalo crescente. Depois de várias falhas seguidas ela passa a
   sugerir conferir usuário e senha.
+- **Canal sem câmera:** depois de duas falhas, o CamView pergunta ao
+  próprio NVR se aquele canal está transmitindo. Se o equipamento
+  responde que não, a célula para de insistir a cada poucos segundos,
+  informa "sem transmissão" e volta a tentar de 5 em 5 minutos — assim
+  ela reaparece sozinha quando a câmera for consertada, sem ficar
+  martelando o gravador enquanto isso.
 - **Cuidado com senha errada:** NVRs Hikvision bloqueiam o IP de origem
   após algumas tentativas de login malsucedidas (o bloqueio costuma cair
   sozinho em ~30 min). Por isso o CamView se recusa a abrir streams de um
@@ -138,8 +144,11 @@ inclusive no modo escuro) — não há tema próprio embutido.
 
 Como usar hoje:
 
-- Menu **NVR → Adicionar NVR...** para cadastrar um equipamento (os canais
-  são gerados automaticamente).
+- Menu **NVR → Adicionar NVR...** para cadastrar um equipamento. No campo
+  **Dispositivo** escolha **NVR/DVR** (os canais são gerados
+  automaticamente) ou **Câmera avulsa** — nesse caso não há canais a
+  informar, ela aparece como uma linha única na lista e o duplo clique
+  **abre direto em tela cheia**.
 - **Duplo clique no NVR** abre **todos os canais dele de uma vez**, ajustando
   a grade automaticamente ao número de câmeras (4 canais → 2x2, 16 → 4x4).
 - **Duplo clique** numa câmera da árvore lateral abre o stream na primeira

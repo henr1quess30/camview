@@ -23,14 +23,23 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_HTTP_PORT = 80
 _TIMEOUT_SECONDS = 8.0
+#: Status queries run while the app is live and must not delay closing it,
+#: so they get a tighter budget than interactive discovery.
+_STATUS_TIMEOUT_SECONDS = 2.5
 
 #: Channels the recorder can stream, with per-channel stream ids (N01/N02).
 _STREAMING_CHANNELS_PATH = "/ISAPI/Streaming/channels"
 #: Cameras attached to an NVR's inputs, carrying their configured names.
 _INPUT_PROXY_PATH = "/ISAPI/ContentMgmt/InputProxy/channels"
+#: Same channels, with the recorder's own view of whether each is online.
+_INPUT_PROXY_STATUS_PATH = "/ISAPI/ContentMgmt/InputProxy/channels/status"
 
 _ID_RE = re.compile(r"<id>(\d+)</id>")
 _NAME_RE = re.compile(r"<name>([^<]*)</name>")
+_ONLINE_RE = re.compile(r"<online>(\w+)</online>")
+_STATUS_BLOCK_RE = re.compile(
+    r"<InputProxyChannelStatus[^>]*>(.*?)</InputProxyChannelStatus>", re.DOTALL
+)
 
 
 class DiscoveryError(Exception):
@@ -44,7 +53,12 @@ class DiscoveredChannel:
 
 
 def _fetch(
-    host: str, port: int, path: str, username: str, password: str
+    host: str,
+    port: int,
+    path: str,
+    username: str,
+    password: str,
+    timeout: float = _TIMEOUT_SECONDS,
 ) -> str:
     url = f"http://{host}:{port}{path}"
     manager = urllib.request.HTTPPasswordMgrWithDefaultRealm()
@@ -54,7 +68,7 @@ def _fetch(
         urllib.request.HTTPBasicAuthHandler(manager),
     )
     try:
-        with opener.open(url, timeout=_TIMEOUT_SECONDS) as response:
+        with opener.open(url, timeout=timeout) as response:
             return response.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
@@ -86,6 +100,48 @@ def _channel_names(xml: str) -> dict[int, str]:
         for channel, name in zip(ids, names, strict=False)
         if name.strip()
     }
+
+
+def channel_online_status(
+    host: str,
+    username: str,
+    password: str,
+    http_port: int = DEFAULT_HTTP_PORT,
+    timeout: float = _STATUS_TIMEOUT_SECONDS,
+) -> dict[int, bool]:
+    """Ask the recorder which of its channels currently have a camera online.
+
+    An NVR knows this: a slot whose camera is unplugged, powered off or
+    unreachable reports ``<online>false</online>``. Retrying RTSP against
+    such a channel can only fail, so the app uses this to stop hammering
+    it — and to say *why* the cell is dark instead of blaming the network.
+
+    Returns an empty mapping when the device does not answer this query
+    (older firmware, DVRs with analog inputs), which callers must read as
+    "no information", never as "everything is offline".
+    """
+    try:
+        xml = _fetch(
+            host, http_port, _INPUT_PROXY_STATUS_PATH, username, password, timeout
+        )
+    except DiscoveryError as exc:
+        logger.info("Channel status unavailable for %s: %s", host, exc)
+        return {}
+    return _parse_channel_status(xml)
+
+
+def _parse_channel_status(xml: str) -> dict[int, bool]:
+    """Map channel number to online flag from an InputProxy status document."""
+    status: dict[int, bool] = {}
+    for block in _STATUS_BLOCK_RE.finditer(xml):
+        body = block.group(1)
+        id_match = _ID_RE.search(body)
+        online_match = _ONLINE_RE.search(body)
+        if id_match is None or online_match is None:
+            continue
+        # Ids here are plain channel numbers, not stream ids (N01/N02).
+        status[int(id_match.group(1))] = online_match.group(1).strip() == "true"
+    return status
 
 
 def discover_channels(

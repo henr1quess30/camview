@@ -47,11 +47,23 @@ class DeviceTree(QTreeWidget):
         disabled_icon = QIcon.fromTheme("camera-video-off")
 
         for nvr in self._nvr_repository.list_all():
+            cameras = self._camera_repository.list_by_nvr(nvr.id)  # type: ignore[arg-type]
+
+            if nvr.is_camera and len(cameras) == 1:
+                # A standalone camera as a folder containing exactly one
+                # child is noise; it gets a single row carrying both ids.
+                item = QTreeWidgetItem([nvr.name])
+                item.setData(0, NVR_ID_ROLE, nvr.id)
+                item.setData(0, CAMERA_ID_ROLE, cameras[0].id)
+                item.setIcon(0, camera_icon if cameras[0].enabled else disabled_icon)
+                item.setToolTip(0, f"{nvr.host}:{nvr.rtsp_port}")
+                self.addTopLevelItem(item)
+                continue
+
             nvr_item = QTreeWidgetItem([nvr.name])
             nvr_item.setData(0, NVR_ID_ROLE, nvr.id)
             nvr_item.setIcon(0, nvr_icon)
             nvr_item.setToolTip(0, f"{nvr.host}:{nvr.rtsp_port}")
-            cameras = self._camera_repository.list_by_nvr(nvr.id)  # type: ignore[arg-type]
             for camera in cameras:
                 camera_item = QTreeWidgetItem([camera.name])
                 camera_item.setData(0, CAMERA_ID_ROLE, camera.id)

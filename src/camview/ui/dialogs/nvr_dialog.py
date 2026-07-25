@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from camview.models.camera import StreamType
-from camview.models.nvr import Nvr
+from camview.models.nvr import DeviceType, Nvr
 from camview.services.connectivity import check_tcp_connection
 from camview.services.hikvision import (
     DiscoveredChannel,
@@ -95,13 +95,23 @@ class NvrDialog(QDialog):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Editar NVR" if nvr is not None else "Adicionar NVR")
+        self._editing = nvr is not None
+        self.setWindowTitle("Editar NVR" if self._editing else "Adicionar NVR")
         self.setMinimumWidth(380)
         self._test_worker: _ConnectionTestWorker | None = None
         self._discovery_worker: _ChannelDiscoveryWorker | None = None
         #: Populated by "Detectar canais"; consumed by MainWindow so the
         #: cameras it creates use the device's real channels and names.
         self.discovered_channels: list[DiscoveredChannel] | None = None
+
+        self.device_type_combo = QComboBox()
+        self.device_type_combo.addItem("NVR / DVR", DeviceType.NVR.value)
+        self.device_type_combo.addItem("Câmera avulsa", DeviceType.CAMERA.value)
+        if nvr is not None and nvr.is_camera:
+            self.device_type_combo.setCurrentIndex(1)
+        self.device_type_combo.currentIndexChanged.connect(
+            lambda _index: self._on_device_type_changed()
+        )
 
         self.name_edit = QLineEdit(nvr.name if nvr else "")
         self.host_edit = QLineEdit(nvr.host if nvr else "")
@@ -149,13 +159,16 @@ class NvrDialog(QDialog):
         self.host_edit.setPlaceholderText("192.168.0.10")
 
         form = QFormLayout()
+        form.addRow("Dispositivo:", self.device_type_combo)
         form.addRow("Nome:", self.name_edit)
         form.addRow("Endereço (IP/host):", self.host_edit)
         form.addRow("Porta RTSP:", self.port_spin)
         form.addRow("Usuário:", self.username_edit)
         form.addRow("Senha:", self.password_edit)
-        form.addRow("Quantidade de canais:", self.channel_count_spin)
+        self.channel_count_label = QLabel("Quantidade de canais:")
+        form.addRow(self.channel_count_label, self.channel_count_spin)
         form.addRow("Stream padrão:", self.default_stream_combo)
+        self._on_device_type_changed()
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -232,6 +245,26 @@ class NvrDialog(QDialog):
         logger.warning("NVR connection test failed: %s", message)
         self.test_result_label.setText(f"Falha na conexão: {message}")
 
+    def result_device_type(self) -> DeviceType:
+        # Rebuilt from the value: Qt hands back a plain str because
+        # DeviceType inherits from it.
+        return DeviceType(self.device_type_combo.currentData())
+
+    def _on_device_type_changed(self) -> None:
+        """A single camera has no channel count to ask about — it is one."""
+        is_camera = self.result_device_type() is DeviceType.CAMERA
+        self.channel_count_label.setVisible(not is_camera)
+        self.channel_count_spin.setVisible(not is_camera)
+        if is_camera:
+            self.channel_count_spin.setValue(1)
+        self.detect_button.setText(
+            "Detectar nome" if is_camera else "Detectar canais"
+        )
+        self.setWindowTitle(
+            ("Editar" if self._editing else "Adicionar")
+            + (" câmera" if is_camera else " NVR")
+        )
+
     def _on_reveal_password(self, revealed: bool) -> None:
         self.password_edit.setEchoMode(
             QLineEdit.EchoMode.Normal if revealed else QLineEdit.EchoMode.Password
@@ -299,6 +332,7 @@ class NvrDialog(QDialog):
             # plain str, since Qt's variant marshalling follows the str
             # mix-in rather than preserving the Python enum type.
             default_stream=StreamType(self.default_stream_combo.currentData()),
+            device_type=self.result_device_type(),
             created_at=existing.created_at if existing else None,
             updated_at=existing.updated_at if existing else None,
         )

@@ -7,7 +7,7 @@ from datetime import datetime
 
 from camview.models.camera import Camera, StreamType
 from camview.models.layout import Layout, LayoutItem
-from camview.models.nvr import Nvr
+from camview.models.nvr import DeviceType, Nvr
 
 
 def _parse_datetime(value: str | None) -> datetime | None:
@@ -24,8 +24,11 @@ class NvrRepository:
         with self._connection:
             cursor = self._connection.execute(
                 """
-                INSERT INTO nvrs (name, host, rtsp_port, username, channel_count, default_stream)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO nvrs (
+                    name, host, rtsp_port, username, channel_count,
+                    default_stream, device_type
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     nvr.name,
@@ -34,6 +37,7 @@ class NvrRepository:
                     nvr.username,
                     nvr.channel_count,
                     nvr.default_stream.value,
+                    nvr.device_type.value,
                 ),
             )
         created = self.get(cursor.lastrowid)
@@ -58,7 +62,7 @@ class NvrRepository:
                 """
                 UPDATE nvrs
                 SET name = ?, host = ?, rtsp_port = ?, username = ?, channel_count = ?,
-                    default_stream = ?, updated_at = datetime('now')
+                    default_stream = ?, device_type = ?, updated_at = datetime('now')
                 WHERE id = ?
                 """,
                 (
@@ -68,6 +72,7 @@ class NvrRepository:
                     nvr.username,
                     nvr.channel_count,
                     nvr.default_stream.value,
+                    nvr.device_type.value,
                     nvr.id,
                 ),
             )
@@ -86,6 +91,7 @@ class NvrRepository:
             username=row["username"],
             channel_count=row["channel_count"],
             default_stream=StreamType(row["default_stream"]),
+            device_type=DeviceType(row["device_type"]),
             created_at=_parse_datetime(row["created_at"]),
             updated_at=_parse_datetime(row["updated_at"]),
         )

@@ -75,6 +75,22 @@ def fake_instance(monkeypatch: pytest.MonkeyPatch) -> FakeInstance:
     return instance
 
 
+@pytest.fixture(autouse=True)
+def no_device_queries(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the channel-status query away from the network.
+
+    A cell that fails twice asks its recorder whether the channel is even
+    transmitting. In tests that would be a real HTTP request to a
+    documentation address, left running in a thread at exit — which
+    aborts the process. Tests that want to exercise the flow monkeypatch
+    this again; theirs is applied later and wins.
+    """
+    monkeypatch.setattr(
+        "camview.ui.main_window.channel_online_status",
+        lambda *_args, **_kwargs: {},
+    )
+
+
 @pytest.fixture
 def fake_keyring() -> Iterator[FakeKeyringBackend]:
     backend = FakeKeyringBackend()
