@@ -1,0 +1,41 @@
+# Maintainer: CamView contributors
+#
+# Arch/EndeavourOS package. Build with:
+#
+#   cd packaging && makepkg -si
+#
+# Runtime note: the `vlc` dependency is deliberate rather than `libvlc`.
+# libvlc alone does NOT play RTSP on Arch — the transport (live555), the
+# H.264/H.265 decoders (ffmpeg) and the video output modules are separate
+# packages. Depending on `vlc` pulls all of them in; see README.md.
+pkgname=camview
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Visualização ao vivo de câmeras/NVRs RTSP em mosaico"
+arch=('any')
+url="https://github.com/henr1quess30/camview"
+license=('MIT')
+depends=('python' 'vlc' 'pyside6' 'python-keyring')
+makedepends=('python-build' 'python-installer' 'python-hatchling')
+optdepends=('kwallet: armazenamento de senhas no KDE Plasma')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$srcdir/$pkgname-$pkgver"
+  python -m build --wheel --no-isolation
+}
+
+package() {
+  cd "$srcdir/$pkgname-$pkgver"
+  python -m installer --destdir="$pkgdir" dist/*.whl
+
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+
+  sed "s|@EXEC@|/usr/bin/camview|" scripts/camview.desktop.in \
+    > "$pkgdir/camview.desktop.tmp"
+  install -Dm644 "$pkgdir/camview.desktop.tmp" \
+    "$pkgdir/usr/share/applications/camview.desktop"
+  rm "$pkgdir/camview.desktop.tmp"
+}

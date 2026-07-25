@@ -1,0 +1,21 @@
+#!/bin/bash
+# AppImage entry point (skeleton — see ../README.md).
+#
+# Two things must be set before Python starts, and both are the reason a
+# naive bundle of this app shows no video at all:
+#
+#   1. libVLC looks for its plugins at a path baked in at build time. In a
+#      relocatable bundle that path is wrong, so it must be pointed at the
+#      bundled copy explicitly.
+#   2. libVLC 3.x can only embed video into an X11 window, so the app runs
+#      under XWayland even on a Wayland session.
+set -euo pipefail
+
+HERE="$(dirname "$(readlink -f "${0}")")"
+
+export VLC_PLUGIN_PATH="${HERE}/usr/lib/vlc/plugins"
+export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH:-}"
+export PYTHONPATH="${HERE}/usr/lib/python/site-packages:${PYTHONPATH:-}"
+export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
+
+exec "${HERE}/usr/bin/python3" -m camview "$@"

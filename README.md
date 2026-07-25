@@ -48,6 +48,16 @@ pip install -e ".[dev]"
 python -m camview
 ```
 
+### Pacote do sistema (Arch/EndeavourOS)
+
+```bash
+cd packaging && makepkg -si
+```
+
+Veja [packaging/README.md](packaging/README.md) — inclui também o
+esqueleto de AppImage e por que o empacotamento do libVLC exige cuidado
+com o caminho dos plugins.
+
 ### Atalho no menu do KDE
 
 Para abrir o CamView pelo menu de aplicativos, sem terminal:
@@ -119,10 +129,9 @@ src/camview/
 Em desenvolvimento incremental. Veja [PLAN.md](PLAN.md) para o roteiro
 completo de fases e o que já foi concluído.
 
-Fases concluídas: **0 a 9** — mosaico, layouts salvos, restauração da
-sessão, tela de configurações, auditoria de tratamento de erros e
-polimento visual, validados contra NVRs Hikvision reais com até 16 streams
-simultâneos.
+**Versão 0.1.0 — as 12 fases do [PLAN.md](PLAN.md) estão concluídas.**
+Validado contra oito NVRs Hikvision reais, com até 16 streams simultâneos.
+Veja o [CHANGELOG.md](CHANGELOG.md) para o resumo do que a versão entrega.
 
 A interface segue o tema do sistema (ícones e cores do KDE Plasma,
 inclusive no modo escuro) — não há tema próprio embutido.

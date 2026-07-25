@@ -1,0 +1,52 @@
+# Changelog
+
+Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
+
+## [0.1.0] — 2026-07-25
+
+Primeira versão utilizável. Cliente desktop de visualização ao vivo de
+câmeras/NVRs via RTSP, em mosaico. Validado contra oito NVRs Hikvision
+reais, com até 16 streams simultâneos.
+
+### Adicionado
+
+- **Cadastro de NVRs** com teste de conexão e detecção automática de
+  canais e nomes de câmera via ISAPI (equipamentos reais têm canais
+  faltando; assumir `1..N` cria células mortas).
+- **Mosaico** 1x1 a 4x4, com duplo clique e arrastar para posicionar
+  câmeras, trocar células de lugar e maximizar. Duplo clique no NVR abre
+  todos os canais dele de uma vez, ajustando a grade.
+- **Layouts salvos**: nome, grade, câmera e stream por posição, com
+  carregar, renomear, sobrescrever e excluir.
+- **Restauração de sessão**: janela, grade e último layout voltam como
+  estavam, com as câmeras reproduzindo.
+- **Configurações**: latência, transporte RTSP, stream do mosaico, áudio,
+  reconexão automática e intervalo máximo, iniciar maximizado, reabrir o
+  último layout e diretório de logs.
+- **Escolha de stream por célula** (botão direito), para contornar
+  substreams configurados com taxa de quadros baixa no próprio NVR.
+- **Watchdog de travamento**: quando o NVR para de enviar sem avisar — o
+  libVLC não emite erro nenhum nesse caso — a célula é reconectada
+  sozinha em ~10s.
+- **Reconexão com backoff** (2s → 5s → 10s → até o teto configurado), e um
+  aviso sobre risco de bloqueio de IP após falhas repetidas.
+- Senhas apenas no **keyring** (KWallet/SecretService), nunca no banco nem
+  na URL persistida.
+- Atalho no menu do KDE (`scripts/install-desktop-entry.sh`) e esqueleto
+  de empacotamento (`packaging/`: PKGBUILD do Arch e AppImage).
+
+### Segurança
+
+- O app se recusa a abrir streams de um NVR sem senha armazenada, em vez
+  de tentar e falhar: NVRs Hikvision bloqueiam o IP de origem depois de
+  algumas tentativas de login malsucedidas.
+- Nenhuma senha real nos testes; fixtures usam endereços da faixa de
+  documentação RFC 5737.
+
+### Notas de plataforma
+
+- O libVLC 3.x só embute vídeo em janela X11, então o app força
+  `QT_QPA_PLATFORM=xcb` e roda via XWayland em sessões Wayland.
+- No Arch, o pacote `libvlc` sozinho **não reproduz RTSP**; é preciso o
+  pacote `vlc` completo (transporte live555, decodificadores ffmpeg e
+  módulos de saída de vídeo são pacotes separados).

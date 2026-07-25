@@ -22,7 +22,7 @@ validada antes de avançar para a próxima.
 - [x] Fase 8 — Tratamento de erros
 - [x] Fase 9 — Polimento de UI
 - [x] Fase 10 — Testes
-- [ ] Fase 11 — Empacotamento e documentação final
+- [x] Fase 11 — Empacotamento e documentação final
 
 ## Fase 0 — Scaffold & janela vazia
 
@@ -529,8 +529,22 @@ Preenchido nesta fase o que faltava:
 - O que segue sem cobertura é deliberado: pintura de widget, arrastar com
   o mouse de verdade e o `main()` (que constrói `QApplication` real).
 
-## Fase 11 — Empacotamento e documentação final
+## Fase 11 — Empacotamento e documentação final ✅
 
-Validar `pip install -e ".[dev]"` fim a fim, preparar a estrutura para
-AppImage e PKGBUILD do Arch (estrutural, não construído ainda), finalizar
-`README.md`, adicionar `CHANGELOG.md`.
+- **Instalação limpa validada de ponta a ponta**: virtualenv novo,
+  `pip install -e ".[dev]"`, import do pacote, entry point `camview`
+  criado, e o app abrindo, criando banco e log em diretórios XDG
+  isolados antes de fechar sozinho.
+- **`packaging/PKGBUILD`** para Arch/EndeavourOS. Depende de `vlc`, não de
+  `libvlc` — a diferença entre um pacote que instala "com sucesso" e um
+  app que mostra imagem. Usa `pyside6` e `python-keyring` do sistema, para
+  o app usar o mesmo Qt do resto do desktop.
+- **`packaging/appimage/`** com `AppRun` e `.desktop`. Deliberadamente um
+  esqueleto: o ponto espinhoso do AppImage aqui é embutir o libVLC **com
+  os plugins** e reapontar `VLC_PLUGIN_PATH` em tempo de execução, já
+  documentado no `AppRun` e no `packaging/README.md`.
+- **`CHANGELOG.md`** da 0.1.0, incluindo as notas de segurança (senha só
+  no keyring, recusa de stream sem senha por causa do bloqueio de IP) e as
+  de plataforma (XWayland, plugins do VLC no Arch).
+- `README.md` finalizado: instalação, uso, configurações, o que fazer
+  quando algo dá errado, e como rodar testes com cobertura.
