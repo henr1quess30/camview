@@ -81,6 +81,20 @@ STALL_TIMEOUT_S = 10.0
 #: the shortest delay forever instead of backing off.
 HEALTHY_PLAYBACK_S = 30.0
 
+#: Consecutive failures before the cell stops blaming the network and
+#: starts pointing at credentials.
+CREDENTIAL_HINT_AFTER_FAILURES = 5
+
+#: Shown once a cell has failed repeatedly without ever playing. Wrong
+#: credentials look exactly like an unreachable device from libVLC's side,
+#: and Hikvision NVRs lock out the source IP after enough failed logins —
+#: so the guess worth surfacing is the one with consequences.
+CREDENTIAL_HINT = (
+    "Verifique usuário e senha deste NVR.\n"
+    "Tentativas repetidas com senha errada podem bloquear o acesso "
+    "deste computador no equipamento."
+)
+
 
 class VideoTile(QWidget):
     """A single mosaic cell: video area, header (status/name/close), auto-reconnect."""
@@ -118,6 +132,8 @@ class VideoTile(QWidget):
         self._playback_options = playback_options or PlaybackOptions()
         self._reconnect_enabled = reconnect_enabled
         self._backoff = ReconnectBackoff(backoff_schedule)
+        #: Failures since the stream last played, for the credential hint.
+        self._consecutive_failures = 0
         self._player: vlc.MediaPlayer | None = None
         self.status = ConnectionStatus.CONNECTING
         self._selected = False
@@ -293,6 +309,7 @@ class VideoTile(QWidget):
 
     def _on_playing(self) -> None:
         self._set_status(ConnectionStatus.PLAYING)
+        self._consecutive_failures = 0
         self._last_picture_count = None
         self._last_progress_at = monotonic()
         self._stall_timer.start()
@@ -344,6 +361,10 @@ class VideoTile(QWidget):
     def _schedule_reconnect(self, message: str) -> None:
         self._stall_timer.stop()
         self._healthy_timer.stop()
+
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= CREDENTIAL_HINT_AFTER_FAILURES:
+            message = f"{message}\n\n{CREDENTIAL_HINT}"
 
         if not self._reconnect_enabled:
             logger.warning(

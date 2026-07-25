@@ -19,7 +19,7 @@ validada antes de avançar para a próxima.
 - [x] Fase 5 — Layouts salvos
 - [x] Fase 6 — Restauração de estado ao abrir
 - [x] Fase 7 — Tela de configurações
-- [ ] Fase 8 — Tratamento de erros
+- [x] Fase 8 — Tratamento de erros
 - [x] Fase 9 — Polimento de UI
 - [ ] Fase 10 — Testes
 - [ ] Fase 11 — Empacotamento e documentação final
@@ -372,21 +372,46 @@ Validação real no `192.0.2.6`, mosaico 2x2:
 | Célula 0 trocada para principal | célula 0 a 1920x1080 **29,8 fps**; vizinhas seguem em 13 fps |
 | Configuração global = principal | 4 células a 1920x1080, **26–30 fps** |
 
-## Fase 8 — Tratamento de erros
+## Fase 8 — Tratamento de erros ✅
 
-**Pista do usuário a investigar aqui (2026-07-25):** deixando todas as
-células no stream **principal**, elas não congelam. Se o travamento
-silencioso só ocorre no substream, o suspeito é o encoder secundário do
-NVR, não a rede nem o app — o watchdog da Fase 3/4 cobre o sintoma, mas
-vale medir o congelamento por tipo de stream antes de concluir.
+Auditoria caso a caso. Regra aplicada em todos: capturar na camada certa,
+logar o detalhe técnico e mostrar ao usuário uma frase que nomeia o que
+falhou.
 
+| Cenário | Onde é tratado | O que o usuário vê |
+|---------|----------------|--------------------|
+| Banco corrompido/inacessível **na abertura** | `__main__._report_startup_failure` | Diálogo com o caminho do arquivo, o erro e a instrução de renomeá-lo; avisa que as senhas seguem no keyring. Sai com código 1 |
+| Erro de banco **durante o uso** | `MainWindow._report_error` + guardas em ler NVRs, abrir câmera, abrir NVR inteiro e carregar layout | Diálogo nomeando a operação; o mosaico na tela é preservado |
+| Configurações ilegíveis | construtor da `MainWindow` | Nada: cai nos padrões e loga (perder a janela seria pior que perder preferências) |
+| Falha ao gravar a sessão | `_save_session` | Nada: logado; nunca impede fechar o app |
+| libVLC ausente | `MainWindow._vlc_is_available` | **Um** diálogo com o comando de instalação — não um por célula |
+| Keyring indisponível | `_nvr_password_or_warn` | Diálogo; silencioso quando é restauração de sessão |
+| Sem senha armazenada | `_nvr_password_or_warn` | Aviso único por NVR, e o stream nem é tentado (evita bloqueio de IP) |
+| Endereço inválido (URL colada no lugar do host) | `NvrDialog._on_accept` | Recusa com explicação, antes de salvar |
+| Senha em branco no cadastro | `NvrDialog._on_accept` | Pergunta se é intencional, explicando que os streams não abrirão |
+| Credenciais erradas / NVR inacessível | `VideoTile._schedule_reconnect` | Após 5 falhas seguidas, a célula passa a sugerir conferir usuário/senha **e avisa do risco de bloqueio do IP** |
+| Stream travado sem erro do libVLC | watchdog (`_check_for_stall`) | Reconecta sozinho; ver Fase 3 |
+| Codec não suportado / stream indisponível | evento de erro do libVLC | Célula em estado de erro + reconexão com backoff |
+| Exceção não tratada em qualquer lugar | `app._install_excepthook` | Registrada no log; o app continua de pé (`KeyboardInterrupt` segue para o hook padrão) |
 
-Auditoria de todos os cenários de falha: IP/porta inválidos, credenciais
-incorretas, NVR inacessível, timeout, stream indisponível, codec não
-suportado, VLC não instalado, keyring indisponível, banco corrompido.
-Cada caso deve ser capturado na camada correta, logado com detalhe técnico
-e apresentado ao usuário com mensagem compreensível — nenhuma exceção não
-tratada pode encerrar o aplicativo.
+### Decisões que valem registro
+
+- **Nada de adivinhação prematura.** O libVLC não distingue senha errada de
+  equipamento fora do ar, então a dica de credenciais só aparece depois de
+  5 falhas consecutivas sem nenhuma reprodução — e some assim que o stream
+  volta. Ela existe porque só uma das duas causas tem consequência séria
+  aqui: o bloqueio do IP desta máquina, que já aconteceu duas vezes
+  durante o desenvolvimento.
+- **A reconexão continua infinita.** Parar depois de N tentativas
+  "protegeria" o NVR, mas quebraria o caso normal de CFTV: uma câmera que
+  cai por uma hora precisa voltar sozinha. O intervalo máximo (Fase 7) é o
+  controle certo para isso.
+- **Ler antes de destruir.** `_load_layout` resolve câmeras e NVRs no
+  banco *antes* de limpar o mosaico, para que uma falha de banco não deixe
+  o usuário com a tela vazia e nenhum layout carregado.
+- **Uma lacuna real encontrada pelos próprios testes:** um erro de banco
+  ao ler as configurações derrubava o construtor da `MainWindow`, ou seja,
+  o app inteiro. Agora cai nos padrões.
 
 ## Fase 9 — Polimento de UI ✅
 

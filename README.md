@@ -59,6 +59,25 @@ Para abrir o CamView pelo menu de aplicativos, sem terminal:
 O script aponta o atalho para o Python do virtualenv deste checkout, então
 não é preciso ativar o ambiente antes de abrir.
 
+## Quando algo dá errado
+
+O CamView foi feito para não morrer por causa de uma falha: erro de banco,
+keyring indisponível, NVR fora do ar ou libVLC ausente viram mensagem na
+tela e registro no log, nunca um fechamento inesperado.
+
+- **Logs:** `~/.local/state/camview/logs/camview.log` (o diretório é
+  configurável em Configurações → Logs).
+- **Uma célula em vermelho** mostra o motivo e reconecta sozinha, com
+  intervalo crescente. Depois de várias falhas seguidas ela passa a
+  sugerir conferir usuário e senha.
+- **Cuidado com senha errada:** NVRs Hikvision bloqueiam o IP de origem
+  após algumas tentativas de login malsucedidas (o bloqueio costuma cair
+  sozinho em ~30 min). Por isso o CamView se recusa a abrir streams de um
+  NVR sem senha armazenada em vez de tentar e falhar.
+- **Banco corrompido:** o app explica o problema na abertura e indica
+  renomear `~/.local/share/camview/camview.db`; um banco novo é criado na
+  próxima execução. As senhas continuam no keyring.
+
 ## Desenvolvimento
 
 Rodar os testes:
@@ -95,10 +114,10 @@ src/camview/
 Em desenvolvimento incremental. Veja [PLAN.md](PLAN.md) para o roteiro
 completo de fases e o que já foi concluído.
 
-Fases concluídas: **0 a 7 e 9** — mosaico, layouts salvos, restauração da
-sessão, tela de configurações e polimento visual, validados contra NVRs
-Hikvision reais com até 16 streams simultâneos. A Fase 8 (auditoria de
-tratamento de erros) ficou para depois, a pedido.
+Fases concluídas: **0 a 9** — mosaico, layouts salvos, restauração da
+sessão, tela de configurações, auditoria de tratamento de erros e
+polimento visual, validados contra NVRs Hikvision reais com até 16 streams
+simultâneos.
 
 A interface segue o tema do sistema (ícones e cores do KDE Plasma,
 inclusive no modo escuro) — não há tema próprio embutido.

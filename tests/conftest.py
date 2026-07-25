@@ -56,11 +56,15 @@ class FakeKeyringBackend(keyring.backend.KeyringBackend):
 
 @pytest.fixture
 def fake_instance(monkeypatch: pytest.MonkeyPatch) -> FakeInstance:
-    """Replace the global vlc.Instance getter with an in-memory fake."""
+    """Replace the global vlc.Instance getter with an in-memory fake.
+
+    Patched at every import site, not just the tile's: MainWindow also
+    resolves the instance to check whether libVLC is usable at all, and a
+    missed site would quietly build a real one.
+    """
     instance = FakeInstance()
-    monkeypatch.setattr(
-        "camview.ui.widgets.video_tile.get_vlc_instance", lambda: instance
-    )
+    for module in ("camview.ui.widgets.video_tile", "camview.ui.main_window"):
+        monkeypatch.setattr(f"{module}.get_vlc_instance", lambda: instance)
     return instance
 
 

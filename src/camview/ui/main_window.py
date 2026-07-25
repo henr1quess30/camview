@@ -52,6 +52,7 @@ from camview.services.settings import (
     playback_options_for,
     save_settings,
 )
+from camview.services.stream_manager import VlcUnavailableError, get_vlc_instance
 from camview.ui.dialogs.layout_dialog import LayoutManagerDialog
 from camview.ui.dialogs.nvr_dialog import NvrDialog
 from camview.ui.dialogs.settings_dialog import SettingsDialog
@@ -115,9 +116,18 @@ class MainWindow(QMainWindow):
         self._camera_repository = CameraRepository(connection)
         self._layout_repository = LayoutRepository(connection)
         self._settings_repository = SettingsRepository(connection)
-        self._settings: AppSettings = load_settings(self._settings_repository)
+        try:
+            self._settings: AppSettings = load_settings(self._settings_repository)
+        except sqlite3.Error as exc:
+            # Unreadable settings must not cost the user the whole window;
+            # defaults are exactly the behaviour before settings existed.
+            logger.warning("Could not read settings, using defaults: %s", exc)
+            self._settings = AppSettings()
         #: Saved layout currently on screen, if any — the target of "Salvar".
         self._current_layout_id: int | None = None
+        #: libVLC availability, probed lazily and reported at most once.
+        self._vlc_checked = False
+        self._vlc_available = True
 
         self._build_sidebar()
         self._build_central_widget()
@@ -338,6 +348,42 @@ class MainWindow(QMainWindow):
         # a modal dialog before the window is even on screen.
         self._load_layout(layout_id, quiet=True)
 
+    # ------------------------------------------------------------------
+    # Failure reporting
+    # ------------------------------------------------------------------
+
+    def _report_error(self, context: str, exc: Exception) -> None:
+        """Log the technical detail, show the user something they can act on.
+
+        Every database or credential failure that reaches the UI goes
+        through here, so the log always has the exception and the user
+        always gets a sentence naming what failed.
+        """
+        logger.error("%s: %s", context, exc, exc_info=True)
+        QMessageBox.critical(self, "CamView", f"{context}.\n\nDetalhe: {exc}")
+
+    def _refresh_device_tree(self) -> None:
+        """Reload the sidebar, reporting instead of crashing on a DB error."""
+        try:
+            self.device_tree.refresh()
+        except sqlite3.Error as exc:
+            self._report_error("Não foi possível ler os NVRs cadastrados", exc)
+
+    def _vlc_is_available(self) -> bool:
+        """Check libVLC once, so a missing install warns once, not per cell."""
+        if self._vlc_checked:
+            return self._vlc_available
+        self._vlc_checked = True
+        try:
+            get_vlc_instance()
+        except VlcUnavailableError as exc:
+            self._vlc_available = False
+            logger.critical("libVLC unavailable: %s", exc)
+            QMessageBox.critical(self, "CamView", str(exc))
+        else:
+            self._vlc_available = True
+        return self._vlc_available
+
     def _show_device_tree_context_menu(self, position: object) -> None:
         item = self.device_tree.itemAt(position)  # type: ignore[arg-type]
         if item is None or item.parent() is not None:
@@ -370,7 +416,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "CamView", str(exc))
             return
 
-        self.device_tree.refresh()
+        self._refresh_device_tree()
         self.statusBar().showMessage(f"NVR '{created.name}' adicionado.", 5000)
 
     def _edit_nvr(self, nvr_id: int) -> None:
@@ -398,7 +444,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "CamView", str(exc))
             return
 
-        self.device_tree.refresh()
+        self._refresh_device_tree()
         self.statusBar().showMessage(f"NVR '{updated.name}' atualizado.", 5000)
 
     def _create_cameras(
@@ -460,7 +506,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "CamView", str(exc))
             return
 
-        self.device_tree.refresh()
+        self._refresh_device_tree()
         self.statusBar().showMessage(f"NVR '{nvr.name}' removido.", 5000)
 
     # ------------------------------------------------------------------
@@ -597,12 +643,26 @@ class MainWindow(QMainWindow):
         ``quiet`` keeps password problems out of modal dialogs; see
         :meth:`_nvr_password_or_warn`.
         """
-        layout = self._layout_repository.get(layout_id)
-        if layout is None:
-            self.statusBar().showMessage("Esse layout não existe mais.", 5000)
+        try:
+            layout = self._layout_repository.get(layout_id)
+            if layout is None:
+                self.statusBar().showMessage("Esse layout não existe mais.", 5000)
+                return
+            items = self._layout_repository.get_items(layout_id)
+            # Resolved up front so a database failure is reported before the
+            # mosaic on screen is torn down.
+            cameras = {
+                item.position: self._camera_repository.get(item.camera_id)
+                for item in items
+            }
+            nvrs = {
+                camera.nvr_id: self._nvr_repository.get(camera.nvr_id)
+                for camera in cameras.values()
+                if camera is not None
+            }
+        except sqlite3.Error as exc:
+            self._report_error("Não foi possível carregar o layout", exc)
             return
-
-        items = self._layout_repository.get_items(layout_id)
         self.video_grid.clear()
         self._apply_grid_shape(layout.rows, layout.columns)
 
@@ -615,11 +675,11 @@ class MainWindow(QMainWindow):
             if item.position >= self.video_grid.cell_count:
                 skipped += 1
                 continue
-            camera = self._camera_repository.get(item.camera_id)
+            camera = cameras.get(item.position)
             if camera is None:
                 skipped += 1
                 continue
-            nvr = self._nvr_repository.get(camera.nvr_id)
+            nvr = nvrs.get(camera.nvr_id)
             if nvr is None:
                 skipped += 1
                 continue
@@ -740,11 +800,15 @@ class MainWindow(QMainWindow):
 
     def _open_camera_at(self, camera_id: int, position: int) -> None:
         """Build the RTSP URL for ``camera_id`` and open it in cell ``position``."""
-        camera = self._camera_repository.get(camera_id)
-        if camera is None:
+        if not self._vlc_is_available():
             return
-        nvr = self._nvr_repository.get(camera.nvr_id)
-        if nvr is None:
+        try:
+            camera = self._camera_repository.get(camera_id)
+            nvr = None if camera is None else self._nvr_repository.get(camera.nvr_id)
+        except sqlite3.Error as exc:
+            self._report_error("Não foi possível ler os dados da câmera", exc)
+            return
+        if camera is None or nvr is None:
             return
 
         password = self._nvr_password_or_warn(nvr)
@@ -767,15 +831,20 @@ class MainWindow(QMainWindow):
         means "show me this device", so a partial mix with other NVRs would
         be surprising.
         """
-        nvr = self._nvr_repository.get(nvr_id)
-        if nvr is None:
+        if not self._vlc_is_available():
             return
-
-        cameras = [
-            camera
-            for camera in self._camera_repository.list_by_nvr(nvr_id)
-            if camera.enabled
-        ]
+        try:
+            nvr = self._nvr_repository.get(nvr_id)
+            if nvr is None:
+                return
+            cameras = [
+                camera
+                for camera in self._camera_repository.list_by_nvr(nvr_id)
+                if camera.enabled
+            ]
+        except sqlite3.Error as exc:
+            self._report_error("Não foi possível ler as câmeras do NVR", exc)
+            return
         if not cameras:
             self.statusBar().showMessage(
                 f"O NVR '{nvr.name}' não tem câmeras cadastradas.", 5000

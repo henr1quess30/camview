@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtGui import QIcon
@@ -31,6 +32,9 @@ from camview.services.hikvision import (
 )
 
 logger = logging.getLogger(__name__)
+
+#: Characters that mean the user pasted a URL instead of a host.
+_INVALID_HOST_CHARS = re.compile(r"[\s/:@]")
 
 
 class _ConnectionTestWorker(QThread):
@@ -243,12 +247,40 @@ class NvrDialog(QDialog):
         if not self.name_edit.text().strip():
             QMessageBox.warning(self, "CamView", "Informe um nome para o NVR.")
             return
-        if not self.host_edit.text().strip():
+
+        host = self.host_edit.text().strip()
+        if not host:
             QMessageBox.warning(self, "CamView", "Informe o endereço do NVR.")
             return
+        if _INVALID_HOST_CHARS.search(host):
+            # A pasted "rtsp://10.0.0.5:554/..." would otherwise be stored as
+            # the host and produce an unexplainable connection failure later.
+            QMessageBox.warning(
+                self,
+                "CamView",
+                "O endereço deve ser apenas o IP ou o nome do equipamento "
+                "(sem 'rtsp://', caminho ou espaços).",
+            )
+            return
+
         if not self.username_edit.text().strip():
             QMessageBox.warning(self, "CamView", "Informe o usuário.")
             return
+
+        if not self.password_edit.text():
+            # Not a hard block — an NVR can be registered now and given its
+            # password later — but silence here turns into cells that refuse
+            # to open with no obvious cause.
+            proceed = QMessageBox.question(
+                self,
+                "CamView",
+                "Nenhuma senha informada.\n\nO CamView não abrirá os streams "
+                "deste NVR enquanto não houver senha armazenada. Salvar mesmo "
+                "assim?",
+            )
+            if proceed != QMessageBox.StandardButton.Yes:
+                return
+
         self.accept()
 
     def result_nvr(self, existing: Nvr | None = None) -> Nvr:
