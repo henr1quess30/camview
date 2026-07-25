@@ -153,6 +153,26 @@ Como usar hoje:
 - O cabeçalho de cada célula mostra **SUB** ou **PRINCIPAL**, indicando qual
   stream está em uso, e a barra inferior mostra quantas células estão
   ocupadas.
+- **Roda do mouse** sobre uma câmera dá zoom digital, aproximando o ponto
+  sob o cursor (até 8x). `0` volta ao normal.
+- Com uma câmera em tela cheia, **→ e ←** passam para a próxima e a
+  anterior sem precisar voltar ao mosaico.
+
+### Zoom e navegação pelo teclado
+
+| Atalho | O que faz |
+|--------|-----------|
+| `→` / `←` | Próxima / câmera anterior (em tela cheia ou na seleção) |
+| `+` / `-` | Aproximar / afastar |
+| `0` | Voltar ao enquadramento normal |
+| `Esc` | Sair da tela cheia |
+
+Todos configuráveis em **Configurações → Atalhos de teclado**.
+
+Ao passar de câmera em câmera, a imagem aparece **na hora**: a célula já
+está reproduzindo desde o mosaico. Se você parar numa câmera por mais de
+um segundo, ela sobe sozinha para o stream principal — passar direto não
+reinicia nada.
 
 Mosaicos usam substream automaticamente (menos banda e CPU); a grade 1x1
 respeita o stream padrão configurado no NVR.

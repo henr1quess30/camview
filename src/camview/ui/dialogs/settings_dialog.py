@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QKeySequenceEdit,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -28,6 +30,15 @@ from PySide6.QtWidgets import (
 
 from camview.config import get_default_log_dir
 from camview.models.settings import AppSettings, MosaicStream
+
+#: Editable shortcuts, in the order they appear in the dialog.
+SHORTCUT_LABELS: dict[str, str] = {
+    "shortcut_next_camera": "Próxima câmera:",
+    "shortcut_previous_camera": "Câmera anterior:",
+    "shortcut_zoom_in": "Aproximar:",
+    "shortcut_zoom_out": "Afastar:",
+    "shortcut_zoom_reset": "Zoom normal:",
+}
 
 MOSAIC_STREAM_LABELS: dict[MosaicStream, str] = {
     MosaicStream.SUB: "Substream (menos banda e CPU)",
@@ -105,6 +116,22 @@ class SettingsDialog(QDialog):
         startup_form.addRow("", self.restore_layout_check)
         root.addWidget(startup)
 
+        shortcuts = QGroupBox("Atalhos de teclado")
+        shortcuts_form = QFormLayout(shortcuts)
+        # QKeySequenceEdit records the actual key press, so the stored
+        # string is always something Qt can parse back.
+        self.shortcut_edits: dict[str, QKeySequenceEdit] = {}
+        for field, label in SHORTCUT_LABELS.items():
+            edit = QKeySequenceEdit()
+            edit.setMaximumSequenceLength(1)
+            self.shortcut_edits[field] = edit
+            shortcuts_form.addRow(label, edit)
+        hint = QLabel("Valem com uma câmera em tela cheia ou com a célula selecionada.")
+        hint.setStyleSheet("color: palette(mid);")
+        hint.setWordWrap(True)
+        shortcuts_form.addRow("", hint)
+        root.addWidget(shortcuts)
+
         logging_box = QGroupBox("Logs")
         logging_layout = QVBoxLayout(logging_box)
         picker = QHBoxLayout()
@@ -160,12 +187,20 @@ class SettingsDialog(QDialog):
         self.maximized_check.setChecked(settings.start_maximized)
         self.restore_layout_check.setChecked(settings.restore_last_layout)
         self.log_dir_edit.setText("" if settings.log_dir is None else str(settings.log_dir))
+        for field, edit in self.shortcut_edits.items():
+            edit.setKeySequence(QKeySequence(getattr(settings, field)))
         self._update_enabled_state(settings.reconnect_enabled)
 
     def result_settings(self) -> AppSettings:
         """The edited settings. Only meaningful once the dialog was accepted."""
         log_dir = self.log_dir_edit.text().strip()
+        defaults = AppSettings()
+        shortcuts = {
+            field: edit.keySequence().toString() or getattr(defaults, field)
+            for field, edit in self.shortcut_edits.items()
+        }
         return AppSettings(
+            **shortcuts,
             network_caching_ms=self.network_caching_spin.value(),
             rtsp_transport_tcp=bool(self.transport_combo.currentData()),
             mute_audio=self.mute_check.isChecked(),

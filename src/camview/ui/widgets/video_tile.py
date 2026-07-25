@@ -26,6 +26,7 @@ from PySide6.QtGui import (
     QMouseEvent,
     QPainter,
     QPaintEvent,
+    QWheelEvent,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -85,6 +86,13 @@ HEALTHY_PLAYBACK_S = 30.0
 #: starts pointing at credentials.
 CREDENTIAL_HINT_AFTER_FAILURES = 5
 
+#: Digital zoom limits. 1.0 is the whole picture; 8x is where a 640x360
+#: substream is already a handful of pixels.
+MIN_ZOOM = 1.0
+MAX_ZOOM = 8.0
+#: Multiplier per wheel notch (or per zoom-in shortcut press).
+ZOOM_STEP = 1.25
+
 #: Shown once a cell has failed repeatedly without ever playing. Wrong
 #: credentials look exactly like an unreachable device from libVLC's side,
 #: and Hikvision NVRs lock out the source IP after enough failed logins —
@@ -134,6 +142,10 @@ class VideoTile(QWidget):
         self._backoff = ReconnectBackoff(backoff_schedule)
         #: Failures since the stream last played, for the credential hint.
         self._consecutive_failures = 0
+        #: Digital zoom: factor plus the point (0..1 of the picture) it is
+        #: centred on, so zooming follows the mouse instead of the middle.
+        self._zoom = MIN_ZOOM
+        self._zoom_center = (0.5, 0.5)
         self._player: vlc.MediaPlayer | None = None
         self.status = ConnectionStatus.CONNECTING
         self._selected = False
@@ -298,6 +310,12 @@ class VideoTile(QWidget):
 
         media = instance.media_new(self.url, *self._playback_options.to_media_options())
         self._player.set_media(media)
+        # The player holds its own reference now, so drop ours. Without this
+        # every reconnect leaks a libvlc media object — invisible in one
+        # session, but a cell retrying every 30s does it ~2900 times a day.
+        release = getattr(media, "release", None)
+        if callable(release):
+            release()
         self._player.play()
         # New media, new counters: the watchdog's clock restarts here, so the
         # connection attempt itself gets the full grace period.
@@ -316,6 +334,9 @@ class VideoTile(QWidget):
     def _on_playing(self) -> None:
         self._set_status(ConnectionStatus.PLAYING)
         self._consecutive_failures = 0
+        # New media starts uncropped, so a zoom set before this point (or
+        # kept across a stream switch) has to be put back.
+        self._apply_zoom()
         self._last_picture_count = None
         self._last_progress_at = monotonic()
         self._stall_timer.start()
@@ -421,6 +442,88 @@ class VideoTile(QWidget):
         self._backoff.reset()
         self._reconnect_timer.stop()
         self._connect()
+
+    # ------------------------------------------------------------------
+    # Digital zoom
+    # ------------------------------------------------------------------
+
+    @property
+    def zoom(self) -> float:
+        return self._zoom
+
+    def zoom_by(self, factor: float, center: tuple[float, float] | None = None) -> None:
+        """Multiply the zoom, optionally re-centring on a point of the picture.
+
+        ``center`` is in picture coordinates (0..1). Zooming toward the
+        cursor is what makes a wheel gesture feel right; without it every
+        step drifts back to the middle of the frame.
+        """
+        new_zoom = max(MIN_ZOOM, min(MAX_ZOOM, self._zoom * factor))
+        if center is not None:
+            self._zoom_center = (
+                min(1.0, max(0.0, center[0])),
+                min(1.0, max(0.0, center[1])),
+            )
+        if new_zoom == self._zoom:
+            return
+        self._zoom = new_zoom
+        self._apply_zoom()
+
+    def reset_zoom(self) -> None:
+        if self._zoom == MIN_ZOOM and self._zoom_center == (0.5, 0.5):
+            return
+        self._zoom = MIN_ZOOM
+        self._zoom_center = (0.5, 0.5)
+        self._apply_zoom()
+
+    def _apply_zoom(self) -> None:
+        """Crop the picture to the zoomed region, via libVLC's crop geometry.
+
+        Cropping rather than scaling keeps the cell filled at every zoom
+        level: libVLC then stretches the remaining region to the widget,
+        which is exactly what a digital zoom should look like.
+        """
+        player = self._player
+        if player is None:
+            return
+        try:
+            width, height = player.video_get_size(0)
+        except Exception:  # noqa: BLE001 - zoom must never break playback
+            logger.debug("Could not read video size for zoom", exc_info=True)
+            return
+        if not width or not height:
+            return  # No picture yet; the zoom is reapplied once it plays.
+
+        crop_w = max(16, int(width / self._zoom))
+        crop_h = max(16, int(height / self._zoom))
+        left = int(self._zoom_center[0] * width - crop_w / 2)
+        top = int(self._zoom_center[1] * height - crop_h / 2)
+        left = max(0, min(width - crop_w, left))
+        top = max(0, min(height - crop_h, top))
+
+        geometry = "" if self._zoom <= MIN_ZOOM else f"{crop_w}x{crop_h}+{left}+{top}"
+        try:
+            player.video_set_crop_geometry(geometry)
+        except Exception:  # noqa: BLE001
+            logger.debug("Could not apply crop geometry %r", geometry, exc_info=True)
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        """Wheel over the picture zooms in and out, centred on the cursor."""
+        steps = event.angleDelta().y() / 120.0
+        if not steps:
+            super().wheelEvent(event)
+            return
+
+        area = self.video_widget.geometry()
+        position = event.position().toPoint() - area.topLeft()
+        center = None
+        if area.width() and area.height():
+            center = (
+                position.x() / area.width(),
+                position.y() / area.height(),
+            )
+        self.zoom_by(ZOOM_STEP**steps, center)
+        event.accept()
 
     def set_selected(self, selected: bool) -> None:
         """Draw (or clear) the discreet border marking the focused tile.

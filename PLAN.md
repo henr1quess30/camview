@@ -24,6 +24,29 @@ validada antes de avançar para a próxima.
 - [x] Fase 10 — Testes
 - [x] Fase 11 — Empacotamento e documentação final
 
+## Depois da 0.1.0 — zoom, navegação e atalhos (pedido do usuário)
+
+- **Zoom digital por recorte.** `VideoTile.zoom_by()` calcula uma região
+  da imagem e a aplica com `video_set_crop_geometry`. Recortar em vez de
+  escalar mantém a célula preenchida em qualquer zoom — é o que um zoom
+  digital deve parecer. O zoom acompanha o cursor (sem isso, cada passo
+  volta ao centro do quadro) e é reaplicado em `_on_playing`, porque
+  mídia nova começa sem recorte.
+- **Navegação entre câmeras** (`VideoGrid.step`), pulando células vazias e
+  dando a volta. Decisão de desempenho tomada durante a validação real:
+  ao passar de câmera, a célula é maximizada **sem** trocar o stream, e a
+  subida para o principal fica agendada para 1,2s depois
+  (`STREAM_UPGRADE_DELAY_MS`). Antes disso cada passo trocava o stream, e
+  trocar reinicia a reprodução — medido no equipamento: ~3 segundos de
+  tela preta por câmera, o que tornava a navegação inútil. Duplo clique
+  continua subindo na hora, porque aí a escolha foi deliberada.
+- **Atalhos configuráveis** (`AppSettings.shortcut_*` + `QKeySequenceEdit`
+  no diálogo). Um atalho vazio ou inválido é ignorado com aviso no log em
+  vez de derrubar a construção da janela.
+- **Vazamento corrigido:** `_connect()` criava uma mídia por reconexão sem
+  liberar a referência própria. O player retém a sua em `set_media`, então
+  a nossa tem de ser solta.
+
 ## Fase 0 — Scaffold & janela vazia
 
 Estrutura de pastas (`src/camview/...`), `pyproject.toml`, `MainWindow`

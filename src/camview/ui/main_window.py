@@ -58,7 +58,7 @@ from camview.ui.dialogs.nvr_dialog import NvrDialog
 from camview.ui.dialogs.settings_dialog import SettingsDialog
 from camview.ui.widgets.device_tree import CAMERA_ID_ROLE, NVR_ID_ROLE, DeviceTree
 from camview.ui.widgets.video_grid import GRID_SHAPES, VideoGrid, smallest_shape_for
-from camview.ui.widgets.video_tile import VideoTile
+from camview.ui.widgets.video_tile import ZOOM_STEP, VideoTile
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +133,7 @@ class MainWindow(QMainWindow):
         self._build_central_widget()
         self._build_toolbar()
         self._build_menu()
+        self._build_shortcuts()
         self._build_statusbar()
         self._restore_session()
 
@@ -223,6 +224,47 @@ class MainWindow(QMainWindow):
         self.layouts_menu.aboutToShow.connect(self._rebuild_layouts_menu)
         self._rebuild_layouts_menu()
 
+    def _build_shortcuts(self) -> None:
+        """(Re)create the configurable shortcuts from the current settings.
+
+        Rebuilt whenever settings change, so a new key takes effect without
+        restarting. Actions live on the window rather than on a cell: they
+        must work no matter which widget has focus.
+        """
+        for action in getattr(self, "_shortcut_actions", []):
+            self.removeAction(action)
+
+        bindings = (
+            (self._settings.shortcut_next_camera, lambda: self._step_camera(1)),
+            (self._settings.shortcut_previous_camera, lambda: self._step_camera(-1)),
+            (self._settings.shortcut_zoom_in, lambda: self.video_grid.zoom_focused(ZOOM_STEP)),
+            (
+                self._settings.shortcut_zoom_out,
+                lambda: self.video_grid.zoom_focused(1 / ZOOM_STEP),
+            ),
+            (self._settings.shortcut_zoom_reset, self.video_grid.reset_focused_zoom),
+        )
+
+        self._shortcut_actions: list[QAction] = []
+        for sequence, slot in bindings:
+            key = QKeySequence(sequence)
+            if key.isEmpty():
+                logger.warning("Ignoring unusable shortcut %r", sequence)
+                continue
+            action = QAction(self)
+            action.setShortcut(key)
+            action.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
+            action.triggered.connect(slot)
+            self.addAction(action)
+            self._shortcut_actions.append(action)
+
+    def _step_camera(self, offset: int) -> None:
+        """Move to the next/previous camera, reporting where we landed."""
+        self.video_grid.step(offset)
+        tile = self.video_grid.focused_tile()
+        if tile is not None:
+            self.statusBar().showMessage(tile.title, 3000)
+
     def _build_statusbar(self) -> None:
         # Permanent widget (right-hand side): survives the transient
         # showMessage() texts, so the count is always readable.
@@ -264,6 +306,7 @@ class MainWindow(QMainWindow):
             return
 
         self._settings = updated
+        self._build_shortcuts()
         # Playback settings reach libVLC through media options, which are
         # read when a stream starts — so they apply to cells opened or
         # reconnected from now on, not to the ones already running.

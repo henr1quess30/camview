@@ -58,14 +58,38 @@ class FakePlayer:
         self.released = True
 
 
+class FakeMedia:
+    """Stands in for ``vlc.Media``, tracking whether it was released.
+
+    libVLC media objects are reference counted by hand: the player takes
+    its own reference in ``set_media``, so the caller must drop theirs or
+    every reconnect leaks one.
+    """
+
+    def __init__(self, url: str, options: tuple[str, ...]) -> None:
+        self.url = url
+        self.options = options
+        self.released = False
+
+    def release(self) -> None:
+        self.released = True
+
+    # Kept so existing tests can still unpack `player.media` as a pair.
+    def __iter__(self):  # type: ignore[no-untyped-def]
+        return iter((self.url, self.options))
+
+
 class FakeInstance:
     def __init__(self) -> None:
         self.players: list[FakePlayer] = []
+        self.media: list[FakeMedia] = []
 
     def media_player_new(self) -> FakePlayer:
         player = FakePlayer()
         self.players.append(player)
         return player
 
-    def media_new(self, url: str, *options: str) -> tuple[str, tuple[str, ...]]:
-        return (url, options)
+    def media_new(self, url: str, *options: str) -> FakeMedia:
+        media = FakeMedia(url, options)
+        self.media.append(media)
+        return media

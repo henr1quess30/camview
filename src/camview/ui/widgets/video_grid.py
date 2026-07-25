@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent, QIcon
 from PySide6.QtWidgets import (
     QFrame,
@@ -50,6 +50,11 @@ def smallest_shape_for(camera_count: int) -> tuple[int, int]:
 
 #: Shown in empty cells. Tells a first-time user what to do with them.
 EMPTY_CELL_HINT = "Arraste uma câmera aqui"
+
+#: How long a camera must be watched before it is raised to its main
+#: stream. Long enough to step past several cameras without restarting
+#: any of them, short enough that stopping on one sharpens it right away.
+STREAM_UPGRADE_DELAY_MS = 1200
 
 
 class _EmptyCell(QFrame):
@@ -100,6 +105,11 @@ class VideoGrid(QWidget):
         self._maximized_position: int | None = None
         #: Stream each tile used before being maximized, to restore it after.
         self._mosaic_stream_types: dict[int, StreamType] = {}
+
+        #: Delays the jump to the main stream while stepping between cameras.
+        self._upgrade_timer = QTimer(self)
+        self._upgrade_timer.setSingleShot(True)
+        self._upgrade_timer.timeout.connect(self._upgrade_maximized_stream)
 
         self._layout = QGridLayout(self)
         self._layout.setContentsMargins(4, 4, 4, 4)
@@ -281,22 +291,29 @@ class VideoGrid(QWidget):
     def is_maximized(self) -> bool:
         return self._maximized_position is not None
 
-    def maximize(self, position: int) -> None:
+    def maximize(self, position: int, upgrade_stream: bool = True) -> None:
         """Expand one tile to fill the whole grid, hiding the others.
 
         The tile is re-added to the *same* layout rather than reparented:
         reparenting recreates the underlying X11 window, which would break
         the window handle libVLC is already rendering into.
+
+        ``upgrade_stream=False`` shows the cell exactly as it already is.
+        Switching streams restarts playback, which costs a few seconds of
+        black — fine when the user picked this camera deliberately, but not
+        while stepping through a wall of them.
         """
         tile = self._tiles.get(position)
         if tile is None:
             return
 
         self._maximized_position = position
-        # Filling the window with a mosaic-sized substream looks soft, so
-        # step up to the main stream while the cell is enlarged.
-        self._mosaic_stream_types.setdefault(position, tile.stream_type)
-        tile.set_stream_type(StreamType.MAIN)
+        if upgrade_stream:
+            # Filling the window with a mosaic-sized substream looks soft,
+            # so step up to the main stream while the cell is enlarged.
+            self._upgrade_timer.stop()
+            self._mosaic_stream_types.setdefault(position, tile.stream_type)
+            tile.set_stream_type(StreamType.MAIN)
 
         while self._layout.count():
             self._layout.takeAt(0)
@@ -312,6 +329,7 @@ class VideoGrid(QWidget):
 
     def restore(self) -> None:
         """Undo :meth:`maximize`, showing the full mosaic again."""
+        self._upgrade_timer.stop()
         if self._maximized_position is None:
             return
 
@@ -330,6 +348,74 @@ class VideoGrid(QWidget):
             self.restore()
         else:
             self.maximize(position)
+
+    def step(self, offset: int) -> None:
+        """Move to another camera without going back through the mosaic.
+
+        With a cell maximized this swaps which camera fills the window;
+        otherwise it just moves the selection. Wraps around, so holding the
+        shortcut walks the whole wall.
+        """
+        occupied = sorted(self._tiles)
+        if not occupied:
+            return
+
+        current = (
+            self._maximized_position
+            if self._maximized_position is not None
+            else self._selected_position
+        )
+        if current in occupied:
+            index = (occupied.index(current) + offset) % len(occupied)
+        else:
+            index = 0 if offset >= 0 else len(occupied) - 1
+        target = occupied[index]
+
+        if self._maximized_position is not None:
+            if target == self._maximized_position:
+                return
+            self.restore()
+            # Shown as-is so the picture appears at once; upgraded to the
+            # main stream only if the user settles on this camera.
+            self.maximize(target, upgrade_stream=False)
+            self._upgrade_timer.start(STREAM_UPGRADE_DELAY_MS)
+        else:
+            self.select(target)
+
+    def _upgrade_maximized_stream(self) -> None:
+        """Raise the camera being watched to its main stream."""
+        if self._maximized_position is None:
+            return
+        tile = self._tiles.get(self._maximized_position)
+        if tile is None or tile.stream_type is StreamType.MAIN:
+            return
+        self._mosaic_stream_types.setdefault(
+            self._maximized_position, tile.stream_type
+        )
+        tile.set_stream_type(StreamType.MAIN)
+
+    # ------------------------------------------------------------------
+    # Zoom
+    # ------------------------------------------------------------------
+
+    def focused_tile(self) -> VideoTile | None:
+        """The cell a zoom or navigation command should act on."""
+        position = (
+            self._maximized_position
+            if self._maximized_position is not None
+            else self._selected_position
+        )
+        return None if position is None else self._tiles.get(position)
+
+    def zoom_focused(self, factor: float) -> None:
+        tile = self.focused_tile()
+        if tile is not None:
+            tile.zoom_by(factor)
+
+    def reset_focused_zoom(self) -> None:
+        tile = self.focused_tile()
+        if tile is not None:
+            tile.reset_zoom()
 
     # ------------------------------------------------------------------
     # Events

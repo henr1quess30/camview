@@ -2,6 +2,25 @@
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [Não lançado]
+
+### Adicionado
+
+- **Zoom digital** com a roda do mouse, aproximando o ponto sob o cursor
+  (até 8x), e pelos atalhos `+`, `-` e `0`. Implementado por recorte
+  (`crop geometry`) do libVLC, o que mantém a célula preenchida em
+  qualquer nível de zoom.
+- **Navegação entre câmeras** com uma delas em tela cheia: `→` e `←`
+  passam para a próxima e a anterior sem voltar ao mosaico, pulando
+  células vazias e dando a volta no fim.
+- **Atalhos configuráveis** em Configurações → Atalhos de teclado.
+
+### Corrigido
+
+- Vazamento de um objeto de mídia do libVLC a cada reconexão. Passava
+  despercebido numa sessão, mas uma célula que tenta reconectar a cada
+  30s repete isso ~2.900 vezes por dia.
+
 ## [0.1.0] — 2026-07-25
 
 Primeira versão utilizável. Cliente desktop de visualização ao vivo de

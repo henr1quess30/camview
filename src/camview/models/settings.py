@@ -61,6 +61,15 @@ class AppSettings:
     #: ``None`` means "wherever config.get_default_log_dir() points".
     log_dir: Path | None = None
 
+    # Keyboard shortcuts, as Qt key sequence strings ("Right", "Ctrl+0").
+    # Defaults are chosen to work while a cell fills the window: stepping
+    # through cameras with the arrow keys and zooming with +/-/0.
+    shortcut_next_camera: str = "Right"
+    shortcut_previous_camera: str = "Left"
+    shortcut_zoom_in: str = "+"
+    shortcut_zoom_out: str = "-"
+    shortcut_zoom_reset: str = "0"
+
     def backoff_schedule(self) -> tuple[int, ...]:
         """Reconnect delays, cut off at :attr:`max_reconnect_delay_s`."""
         full = (2, 5, 10, 30, 60)
@@ -77,6 +86,15 @@ def _to_bool(value: str, default: bool) -> bool:
     if lowered in ("0", "false", "no", "off"):
         return False
     return default
+
+
+def _to_shortcut(value: str | None, default: str) -> str:
+    """Keep a stored shortcut only if it still says something.
+
+    Validity is Qt's business (the settings dialog uses a key-sequence
+    editor); an empty row here just means "back to the default".
+    """
+    return value.strip() if value and value.strip() else default
 
 
 def _to_int(value: str, default: int, minimum: int, maximum: int) -> int:
@@ -132,6 +150,21 @@ def settings_from_mapping(stored: dict[str, str]) -> AppSettings:
             raw("restore_last_layout") or "", defaults.restore_last_layout
         ),
         log_dir=Path(log_dir_raw) if log_dir_raw else None,
+        shortcut_next_camera=_to_shortcut(
+            raw("shortcut_next_camera"), defaults.shortcut_next_camera
+        ),
+        shortcut_previous_camera=_to_shortcut(
+            raw("shortcut_previous_camera"), defaults.shortcut_previous_camera
+        ),
+        shortcut_zoom_in=_to_shortcut(
+            raw("shortcut_zoom_in"), defaults.shortcut_zoom_in
+        ),
+        shortcut_zoom_out=_to_shortcut(
+            raw("shortcut_zoom_out"), defaults.shortcut_zoom_out
+        ),
+        shortcut_zoom_reset=_to_shortcut(
+            raw("shortcut_zoom_reset"), defaults.shortcut_zoom_reset
+        ),
     )
 
 
