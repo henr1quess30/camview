@@ -1,0 +1,8 @@
+# Build artefacts and the generator's scratch space.
+build/
+repo/
+.flatpak-builder/
+.gen-venv/
+flatpak-pip-generator
+build.log
+*.flatpak

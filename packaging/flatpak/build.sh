@@ -10,7 +10,8 @@ set -euo pipefail
 
 APP_ID="io.github.henr1quess30.CamView"
 MANIFEST="${APP_ID}.yml"
-RUNTIME_VERSION="24.08"
+RUNTIME_VERSION="6.9"      # org.kde.Platform / org.kde.Sdk
+BASEAPP_VERSION="6.9"      # io.qt.PySide.BaseApp
 cd "$(dirname "$0")"
 
 die() { printf '\n%s\n' "$*" >&2; exit 1; }
@@ -24,8 +25,9 @@ echo "==> Runtime e SDK ${RUNTIME_VERSION}"
 flatpak remote-add --if-not-exists --user flathub \
     https://dl.flathub.org/repo/flathub.flatpakrepo
 flatpak install --user --noninteractive flathub \
-    "org.freedesktop.Platform//${RUNTIME_VERSION}" \
-    "org.freedesktop.Sdk//${RUNTIME_VERSION}"
+    "org.kde.Platform//${RUNTIME_VERSION}" \
+    "org.kde.Sdk//${RUNTIME_VERSION}" \
+    "io.qt.PySide.BaseApp//${BASEAPP_VERSION}"
 
 # flatpak-builder builds offline, so every wheel must be declared with its
 # checksum up front. flatpak-pip-generator resolves requirements.txt into
@@ -33,13 +35,22 @@ flatpak install --user --noninteractive flathub \
 if [ ! -f python3-requirements.json ] || [ requirements.txt -nt python3-requirements.json ]; then
     echo "==> Resolvendo dependências Python (flatpak-pip-generator)"
     if [ ! -f flatpak-pip-generator ]; then
-        curl -sSLO https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/pip/flatpak-pip-generator
+        # The plain name in that repo is a symlink; fetching it over raw
+        # gives the link's text, not the script. Take the .py directly.
+        curl -sSL -o flatpak-pip-generator \
+            https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/pip/flatpak-pip-generator.py
         chmod +x flatpak-pip-generator
+    fi
+    # The generator is a PEP 723 script with its own dependency, so it
+    # gets a throwaway virtualenv rather than touching the system Python.
+    if [ ! -x .gen-venv/bin/python ]; then
+        python3 -m venv .gen-venv
+        .gen-venv/bin/pip install --quiet requirements-parser
     fi
     # --runtime makes it resolve wheels for the runtime's Python, not the
     # host's — the ABI tags have to match or nothing imports.
-    python3 flatpak-pip-generator \
-        --runtime="org.freedesktop.Sdk//${RUNTIME_VERSION}" \
+    .gen-venv/bin/python flatpak-pip-generator \
+        --runtime="org.kde.Sdk//${RUNTIME_VERSION}" \
         --requirements-file=requirements.txt \
         --output=python3-requirements
 fi

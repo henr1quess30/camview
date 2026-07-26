@@ -24,6 +24,17 @@ flatpak run io.github.henr1quess30.CamView
 flatpak uninstall --user io.github.henr1quess30.CamView
 ```
 
+## Por que o PySide6 vem de um BaseApp
+
+PySide6 **não** é instalado do PyPI aqui. O Flathub publica
+`io.qt.PySide.BaseApp`, que já traz Qt6 e PySide6 prontos — é o caminho
+suportado (o `flatpak-pip-generator` inclusive se recusa a empacotar
+PySide6 e aponta para lá) e evita embarcar uma segunda cópia inteira do
+Qt. Por isso o runtime é o `org.kde.Platform`, de onde vem o Qt.
+
+O `cleanup-BaseApp.sh` no fim do build remove os módulos PySide que este
+app nunca importa (WebEngine, Charts, 3D), que é a maior parte do peso.
+
 ## Por que o manifesto compila o VLC
 
 O runtime não traz VLC, e **libvlc sem os plugins não reproduz RTSP** —
@@ -49,6 +60,19 @@ isso o manifesto constrói:
 
 Não há acesso à pasta pessoal: o banco e os logs ficam em
 `~/.var/app/io.github.henr1quess30.CamView/`.
+
+## Migrar dados de uma instalação anterior
+
+O Flatpak tem banco próprio (`~/.var/app/<app-id>/data/camview/`), então
+quem já usava o CamView fora dele começaria sem nenhum NVR. Para levar os
+cadastros junto:
+
+```bash
+./migrate-data.sh
+```
+
+As senhas não são copiadas porque não precisam: elas ficam no keyring do
+sistema, o mesmo que o Flatpak acessa pelo portal de segredos.
 
 ## Publicar no Flathub
 
