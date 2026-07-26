@@ -60,6 +60,13 @@
   </screenshots>
 
   <releases>
+    <release version="0.3.0" date="2026-07-26">
+      <description>
+        <p>Mosaics with a highlighted cell, a status panel with clock and
+        machine usage, camera names adopted from the device, a blank-layout
+        command, and Flatpak packaging.</p>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-07-26">
       <description>
         <p>Digital zoom, camera stepping, configurable shortcuts, standalone

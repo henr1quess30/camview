@@ -9,7 +9,7 @@
 # H.264/H.265 decoders (ffmpeg) and the video output modules are separate
 # packages. Depending on `vlc` pulls all of them in; see README.md.
 pkgname=camview
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc="Visualização ao vivo de câmeras/NVRs RTSP em mosaico"
 arch=('any')

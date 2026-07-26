@@ -6,7 +6,7 @@ from importlib.metadata import PackageNotFoundError, version as _installed_versi
 #: copies the package in rather than pip-installing it. Kept in step with
 #: pyproject.toml by a test, because the update check compares against
 #: this: a stale value here would announce an update forever.
-_FALLBACK_VERSION = "0.2.0"
+_FALLBACK_VERSION = "0.3.0"
 
 try:
     __version__ = _installed_version("camview")
