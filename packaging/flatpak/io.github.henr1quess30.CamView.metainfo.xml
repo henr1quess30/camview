@@ -22,19 +22,19 @@
       sem gravação, sem detecção de movimento, sem análise de imagem, sem
       servidor web.
     </p>
+    <!-- Translations go item by item: AppStream rejects a whole
+         translated <ul>. -->
     <ul>
       <li>Mosaics from 1x1 to 4x4, plus arrangements with one large cell</li>
+      <li xml:lang="pt-BR">Mosaicos de 1x1 a 4x4, e formatos com uma célula destacada</li>
       <li>Saved layouts, restored with the window on the next run</li>
+      <li xml:lang="pt-BR">Layouts salvos, restaurados junto com a janela na próxima vez</li>
       <li>Automatic channel discovery on Hikvision devices (ISAPI)</li>
+      <li xml:lang="pt-BR">Descoberta automática de canais em equipamentos Hikvision (ISAPI)</li>
       <li>Digital zoom, and stepping between cameras from the keyboard</li>
+      <li xml:lang="pt-BR">Zoom digital e navegação entre câmeras pelo teclado</li>
       <li>Passwords kept in the system keyring, never in the database</li>
-    </ul>
-    <ul xml:lang="pt-BR">
-      <li>Mosaicos de 1x1 a 4x4, e formatos com uma célula destacada</li>
-      <li>Layouts salvos, restaurados junto com a janela na próxima vez</li>
-      <li>Descoberta automática de canais em equipamentos Hikvision (ISAPI)</li>
-      <li>Zoom digital e navegação entre câmeras pelo teclado</li>
-      <li>Senhas no keyring do sistema, nunca no banco de dados</li>
+      <li xml:lang="pt-BR">Senhas no keyring do sistema, nunca no banco de dados</li>
     </ul>
   </description>
 
