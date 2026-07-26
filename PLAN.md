@@ -129,7 +129,8 @@ nunca atualizava o nome dos que já existiam.
   trava a execução dos testes.
 
 Rodado nos equipamentos do usuário: **44 câmeras renomeadas** (NVR C:
-11, NVR D: 12, NVR G: 12, NVR A: 9), com nomes como "Entrada 1", "Corredor 2", "Setor A". As 74 que seguem genéricas são
+11, NVR D: 12, NVR G: 12, NVR A: 9), com nomes como "Entrada 1",
+"Corredor 2" e "Setor A". As 74 que seguem genéricas são
 genéricas **no próprio equipamento** — nunca foram nomeadas lá.
 
 ## Mosaicos com célula destacada (pedido do usuário)
