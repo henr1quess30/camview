@@ -163,7 +163,9 @@ Como usar hoje:
   stream está em uso, e a barra inferior mostra quantas células estão
   ocupadas.
 - **Roda do mouse** sobre uma câmera dá zoom digital, aproximando o ponto
-  sob o cursor (até 8x). `0` volta ao normal.
+  sob o cursor (até 8x). Com a imagem ampliada, **arraste com o botão
+  esquerdo para mover a imagem**; `0` volta ao normal (e aí arrastar
+  volta a mover a célula de lugar).
 - Com uma câmera em tela cheia, **→ e ←** passam para a próxima e a
   anterior sem precisar voltar ao mosaico.
 

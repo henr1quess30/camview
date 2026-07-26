@@ -10,9 +10,9 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
-from fakes import FakeInstance, FakePlayer
-from PySide6.QtCore import QPoint, QPointF, Qt
-from PySide6.QtGui import QKeySequence, QWheelEvent
+from fakes import FakeInstance
+from PySide6.QtCore import QPoint, QPointF, QSize, Qt
+from PySide6.QtGui import QKeySequence, QResizeEvent, QWheelEvent
 from PySide6.QtWidgets import QApplication
 
 from camview.database.repositories import SettingsRepository
@@ -38,32 +38,30 @@ STREAM_URLS = {
 }
 
 
-class ZoomablePlayer(FakePlayer):
-    """Fake player that also reports a picture size and records crop calls."""
-
-    def __init__(self, size: tuple[int, int] = (1920, 1080)) -> None:
-        super().__init__()
-        self._size = size
-        self.crops: list[str] = []
-
-    def video_get_size(self, _index: int) -> tuple[int, int]:
-        return self._size
-
-    def video_set_crop_geometry(self, geometry: str) -> None:
-        self.crops.append(geometry)
+AREA = (400, 300)
 
 
-def zoomable_tile(qapp: QApplication, size: tuple[int, int] = (1920, 1080)) -> VideoTile:
+def resize_area(tile: VideoTile, width: int, height: int) -> None:
+    """Resize the visible video area the way a real layout pass would.
+
+    Qt does not deliver resize events to hidden widgets, and these tests
+    never show a window, so the event is dispatched by hand — that keeps
+    the resize hook itself under test instead of assuming it fired.
+    """
+    old = tile._video_area.size()
+    tile._video_area.resize(width, height)
+    tile._video_area.resizeEvent(QResizeEvent(QSize(width, height), old))
+
+
+def zoomable_tile(qapp: QApplication) -> VideoTile:
+    """A tile whose visible video area has a known size.
+
+    Zoom is pure widget geometry now — no libVLC involved — so the video
+    widget's rectangle inside that area is the whole truth.
+    """
     tile = VideoTile(title="Canal 1", stream_urls=STREAM_URLS)
-    tile._player = ZoomablePlayer(size)  # type: ignore[assignment]
+    resize_area(tile, *AREA)
     return tile
-
-
-def parse_crop(geometry: str) -> tuple[int, int, int, int]:
-    size, _, offset = geometry.partition("+")
-    width, height = (int(part) for part in size.split("x"))
-    left, top = (int(part) for part in offset.split("+"))
-    return width, height, left, top
 
 
 class TestZoom:
@@ -71,42 +69,52 @@ class TestZoom:
         self, qapp: QApplication, fake_instance: FakeInstance
     ) -> None:
         tile = zoomable_tile(qapp)
+
         assert tile.zoom == MIN_ZOOM
+        assert tile.video_widget.geometry().size().toTuple() == AREA
         tile.close_stream()
 
-    def test_zooming_in_crops_the_picture(
+    def test_zooming_in_enlarges_the_picture_proportionally(
         self, qapp: QApplication, fake_instance: FakeInstance
     ) -> None:
+        """Both axes by the same factor — that is what keeps it from
+        stretching, which the earlier crop-based version got wrong."""
         tile = zoomable_tile(qapp)
 
         tile.zoom_by(2.0)
 
-        width, height, _, _ = parse_crop(tile._player.crops[-1])  # type: ignore[union-attr]
-        assert (width, height) == (960, 540)
+        geometry = tile.video_widget.geometry()
+        assert (geometry.width(), geometry.height()) == (AREA[0] * 2, AREA[1] * 2)
         tile.close_stream()
 
-    def test_zoom_centres_on_the_requested_point(
+    def test_the_point_under_the_cursor_stays_put(
         self, qapp: QApplication, fake_instance: FakeInstance
     ) -> None:
-        """Zooming toward the cursor is what makes the wheel feel right."""
+        """The complaint that started this rewrite: it zoomed elsewhere."""
         tile = zoomable_tile(qapp)
+        anchor = QPoint(100, 75)
+        before = tile.video_widget.geometry()
+        u = (anchor.x() - before.x()) / before.width()
+        v = (anchor.y() - before.y()) / before.height()
 
-        tile.zoom_by(2.0, center=(0.25, 0.25))
+        tile.zoom_by(2.0, anchor)
 
-        width, height, left, top = parse_crop(tile._player.crops[-1])  # type: ignore[union-attr]
-        assert (left, top) == (1920 // 4 - width // 2, 1080 // 4 - height // 2)
+        after = tile.video_widget.geometry()
+        assert after.x() + u * after.width() == pytest.approx(anchor.x(), abs=1)
+        assert after.y() + v * after.height() == pytest.approx(anchor.y(), abs=1)
         tile.close_stream()
 
-    def test_the_crop_never_leaves_the_picture(
+    def test_the_picture_never_leaves_a_gap(
         self, qapp: QApplication, fake_instance: FakeInstance
     ) -> None:
         tile = zoomable_tile(qapp)
 
-        tile.zoom_by(2.0, center=(1.0, 1.0))
+        tile.zoom_by(2.0, QPoint(AREA[0], AREA[1]))  # bottom-right corner
 
-        width, height, left, top = parse_crop(tile._player.crops[-1])  # type: ignore[union-attr]
-        assert left + width <= 1920
-        assert top + height <= 1080
+        geometry = tile.video_widget.geometry()
+        assert geometry.x() <= 0 and geometry.y() <= 0
+        assert geometry.right() >= AREA[0] - 1
+        assert geometry.bottom() >= AREA[1] - 1
         tile.close_stream()
 
     def test_zoom_is_capped(
@@ -130,59 +138,81 @@ class TestZoom:
             tile.zoom_by(0.5)
 
         assert tile.zoom == MIN_ZOOM
-        assert tile._player.crops[-1] == "", "no crop means the full frame"  # type: ignore[union-attr]
+        assert tile.video_widget.geometry().topLeft() == QPoint(0, 0)
         tile.close_stream()
 
     def test_reset_returns_to_the_full_picture(
         self, qapp: QApplication, fake_instance: FakeInstance
     ) -> None:
         tile = zoomable_tile(qapp)
-        tile.zoom_by(3.0, center=(0.2, 0.8))
+        tile.zoom_by(3.0, QPoint(20, 250))
 
         tile.reset_zoom()
 
         assert tile.zoom == MIN_ZOOM
-        assert tile._player.crops[-1] == ""  # type: ignore[union-attr]
+        assert tile.video_widget.geometry().size().toTuple() == AREA
         tile.close_stream()
 
-    def test_zoom_survives_a_reconnect(
+    def test_resizing_the_cell_keeps_the_zoom(
         self, qapp: QApplication, fake_instance: FakeInstance
     ) -> None:
-        """New media starts uncropped, so the zoom has to be reapplied."""
         tile = zoomable_tile(qapp)
         tile.zoom_by(2.0)
-        tile._player.crops.clear()  # type: ignore[union-attr]
+
+        resize_area(tile, 800, 600)
+
+        geometry = tile.video_widget.geometry()
+        assert (geometry.width(), geometry.height()) == (1600, 1200)
+        tile.close_stream()
+
+    def test_zoom_is_reapplied_when_a_stream_starts(
+        self, qapp: QApplication, fake_instance: FakeInstance
+    ) -> None:
+        """A stream switch can resize the video widget under us."""
+        tile = zoomable_tile(qapp)
+        tile.zoom_by(2.0)
+        tile.video_widget.setGeometry(0, 0, *AREA)  # as if reset by a switch
 
         tile._on_playing()
 
-        assert tile._player.crops, "zoom was not restored after reconnect"  # type: ignore[union-attr]
+        assert tile.video_widget.geometry().width() == AREA[0] * 2
         tile.close_stream()
 
-    def test_a_player_without_a_picture_yet_is_left_alone(
+
+class TestPan:
+    def test_dragging_moves_the_zoomed_picture(
         self, qapp: QApplication, fake_instance: FakeInstance
     ) -> None:
-        tile = zoomable_tile(qapp, size=(0, 0))
+        tile = zoomable_tile(qapp)
+        tile.zoom_by(2.0)
+        before = tile.video_widget.geometry().topLeft()
 
-        tile.zoom_by(2.0)  # must not raise
+        tile.pan_by(-30, -20)
 
-        assert tile._player.crops == []  # type: ignore[union-attr]
+        after = tile.video_widget.geometry().topLeft()
+        assert after == before + QPoint(-30, -20)
         tile.close_stream()
 
-    def test_a_player_that_cannot_report_its_size_is_left_alone(
+    def test_panning_stops_at_the_edge(
         self, qapp: QApplication, fake_instance: FakeInstance
     ) -> None:
-        """Zoom is a convenience; it must never break playback."""
+        tile = zoomable_tile(qapp)
+        tile.zoom_by(2.0)
 
-        class BrokenPlayer(FakePlayer):
-            def video_get_size(self, _index: int) -> tuple[int, int]:
-                raise RuntimeError("no video track")
+        tile.pan_by(10_000, 10_000)
 
-        tile = VideoTile(title="Canal 1", stream_urls=STREAM_URLS)
-        tile._player = BrokenPlayer()  # type: ignore[assignment]
+        assert tile.video_widget.geometry().topLeft() == QPoint(0, 0)
+        tile.close_stream()
 
-        tile.zoom_by(2.0)  # must not raise
+    def test_panning_does_nothing_at_normal_zoom(
+        self, qapp: QApplication, fake_instance: FakeInstance
+    ) -> None:
+        """At 1x there is nothing hidden to drag into view."""
+        tile = zoomable_tile(qapp)
 
-        assert tile.zoom > MIN_ZOOM
+        tile.pan_by(-50, -50)
+
+        assert tile.video_widget.geometry().topLeft() == QPoint(0, 0)
         tile.close_stream()
 
 
@@ -204,7 +234,6 @@ class TestWheelZoom:
         self, qapp: QApplication, fake_instance: FakeInstance
     ) -> None:
         tile = zoomable_tile(qapp)
-        tile.resize(400, 300)
 
         tile.wheelEvent(self._wheel(tile, 1, QPoint(200, 150)))
 
@@ -215,7 +244,6 @@ class TestWheelZoom:
         self, qapp: QApplication, fake_instance: FakeInstance
     ) -> None:
         tile = zoomable_tile(qapp)
-        tile.resize(400, 300)
         tile.zoom_by(4.0)
 
         tile.wheelEvent(self._wheel(tile, -1, QPoint(200, 150)))
@@ -332,7 +360,6 @@ class TestGridNavigation:
 
     def test_zoom_applies_to_the_focused_cell(self, grid: VideoGrid) -> None:
         grid.select(1)
-        grid.tile_at(1)._player = ZoomablePlayer()  # type: ignore[union-attr]
 
         grid.zoom_focused(2.0)
 

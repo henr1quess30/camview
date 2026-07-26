@@ -21,6 +21,7 @@ from PySide6.QtCore import QMimeData, QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QActionGroup,
     QContextMenuEvent,
+    QResizeEvent,
     QDrag,
     QIcon,
     QMouseEvent,
@@ -113,6 +114,27 @@ CREDENTIAL_HINT = (
 )
 
 
+class _VideoArea(QWidget):
+    """Clipping frame for the video widget.
+
+    Exists only so the video widget can be made larger than what is on
+    screen (that is the zoom) while the parts outside stay hidden, and so
+    the tile is told when the visible size changes.
+    """
+
+    def __init__(self, tile: "VideoTile") -> None:
+        super().__init__()
+        self._tile = tile
+        self.setAutoFillBackground(True)
+        palette = self.palette()
+        palette.setColor(self.backgroundRole(), Qt.GlobalColor.black)
+        self.setPalette(palette)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._tile._apply_zoom()
+
+
 class VideoTile(QWidget):
     """A single mosaic cell: video area, header (status/name/close), auto-reconnect."""
 
@@ -157,10 +179,10 @@ class VideoTile(QWidget):
         #: Parked: the device says this channel has no signal, so the cell
         #: waits on a long retry instead of the usual backoff.
         self._parked = False
-        #: Digital zoom: factor plus the point (0..1 of the picture) it is
-        #: centred on, so zooming follows the mouse instead of the middle.
+        #: Digital zoom: how many times larger the video widget is than
+        #: its visible area, and where its top-left sits inside it.
         self._zoom = MIN_ZOOM
-        self._zoom_center = (0.5, 0.5)
+        self._offset = (0.0, 0.0)
         self._player: vlc.MediaPlayer | None = None
         self.status = ConnectionStatus.CONNECTING
         self._selected = False
@@ -236,7 +258,13 @@ class VideoTile(QWidget):
         header_layout.addWidget(self._stream_badge)
         header_layout.addWidget(close_button)
 
-        self.video_widget = QWidget()
+        # The video area is a plain container with no layout: the video
+        # widget's geometry is set by hand so zooming can enlarge and shift
+        # it, with the container clipping whatever falls outside. Doing the
+        # zoom this way keeps it exact — libVLC's own crop filter stretched
+        # the picture and ignored where the pointer actually was.
+        self._video_area = _VideoArea(self)
+        self.video_widget = QWidget(self._video_area)
         self.video_widget.setAutoFillBackground(True)
         palette = self.video_widget.palette()
         palette.setColor(self.video_widget.backgroundRole(), Qt.GlobalColor.black)
@@ -256,7 +284,7 @@ class VideoTile(QWidget):
         # is showing. The message label is opaque, so it still visually
         # covers the video when it is the current (topmost) page.
         self._stack.setStackingMode(QStackedLayout.StackingMode.StackAll)
-        self._stack.addWidget(self.video_widget)
+        self._stack.addWidget(self._video_area)
         self._stack.addWidget(self._message_label)
 
         stack_container = QWidget()
@@ -287,7 +315,7 @@ class VideoTile(QWidget):
         )
         if status == ConnectionStatus.PLAYING:
             self._message_label.hide()
-            self._stack.setCurrentWidget(self.video_widget)
+            self._stack.setCurrentWidget(self._video_area)
         else:
             self._message_label.setText(message)
             self._message_label.show()
@@ -350,8 +378,8 @@ class VideoTile(QWidget):
     def _on_playing(self) -> None:
         self._set_status(ConnectionStatus.PLAYING)
         self._consecutive_failures = 0
-        # New media starts uncropped, so a zoom set before this point (or
-        # kept across a stream switch) has to be put back.
+        # A stream switch can resize the video widget under us; put the
+        # zoom geometry back the way the user left it.
         self._apply_zoom()
         self._last_picture_count = None
         self._last_progress_at = monotonic()
@@ -502,78 +530,80 @@ class VideoTile(QWidget):
     def zoom(self) -> float:
         return self._zoom
 
-    def zoom_by(self, factor: float, center: tuple[float, float] | None = None) -> None:
-        """Multiply the zoom, optionally re-centring on a point of the picture.
+    def zoom_by(self, factor: float, anchor: QPoint | None = None) -> None:
+        """Multiply the zoom, keeping ``anchor`` pinned where it already is.
 
-        ``center`` is in picture coordinates (0..1). Zooming toward the
-        cursor is what makes a wheel gesture feel right; without it every
-        step drifts back to the middle of the frame.
+        ``anchor`` is a point in the visible video area. Pinning it is what
+        makes the wheel feel right — whatever is under the pointer stays
+        under the pointer — and it is exact here because the zoom is pure
+        widget geometry, with no picture coordinates to guess at.
         """
         new_zoom = max(MIN_ZOOM, min(MAX_ZOOM, self._zoom * factor))
-        if center is not None:
-            self._zoom_center = (
-                min(1.0, max(0.0, center[0])),
-                min(1.0, max(0.0, center[1])),
-            )
         if new_zoom == self._zoom:
             return
+
+        area = self._video_area.size()
+        if anchor is not None and area.width() and area.height():
+            current = self.video_widget.geometry()
+            # Where the anchor sits within the (scaled) video widget.
+            u = (anchor.x() - current.x()) / max(1, current.width())
+            v = (anchor.y() - current.y()) / max(1, current.height())
+            self._offset = (
+                anchor.x() - u * area.width() * new_zoom,
+                anchor.y() - v * area.height() * new_zoom,
+            )
+        else:
+            # No anchor: keep the middle of the view where it is.
+            scale = new_zoom / self._zoom
+            self._offset = (
+                area.width() / 2 - (area.width() / 2 - self._offset[0]) * scale,
+                area.height() / 2 - (area.height() / 2 - self._offset[1]) * scale,
+            )
+
         self._zoom = new_zoom
         self._apply_zoom()
 
+    def pan_by(self, dx: int, dy: int) -> None:
+        """Drag the zoomed picture around. No effect at 1x — nothing hidden."""
+        if self._zoom <= MIN_ZOOM:
+            return
+        self._offset = (self._offset[0] + dx, self._offset[1] + dy)
+        self._apply_zoom()
+
     def reset_zoom(self) -> None:
-        if self._zoom == MIN_ZOOM and self._zoom_center == (0.5, 0.5):
+        if self._zoom == MIN_ZOOM and self._offset == (0.0, 0.0):
             return
         self._zoom = MIN_ZOOM
-        self._zoom_center = (0.5, 0.5)
+        self._offset = (0.0, 0.0)
         self._apply_zoom()
 
     def _apply_zoom(self) -> None:
-        """Crop the picture to the zoomed region, via libVLC's crop geometry.
+        """Resize/move the video widget inside its clipping area.
 
-        Cropping rather than scaling keeps the cell filled at every zoom
-        level: libVLC then stretches the remaining region to the widget,
-        which is exactly what a digital zoom should look like.
+        At 1x it fills the area exactly. Zoomed in, it is that many times
+        larger and shifted, so the area shows one part of it — the offset
+        is clamped so the picture can never be dragged off the edge.
         """
-        player = self._player
-        if player is None:
+        area = self._video_area.size()
+        if not area.width() or not area.height():
             return
-        try:
-            width, height = player.video_get_size(0)
-        except Exception:  # noqa: BLE001 - zoom must never break playback
-            logger.debug("Could not read video size for zoom", exc_info=True)
-            return
-        if not width or not height:
-            return  # No picture yet; the zoom is reapplied once it plays.
 
-        crop_w = max(16, int(width / self._zoom))
-        crop_h = max(16, int(height / self._zoom))
-        left = int(self._zoom_center[0] * width - crop_w / 2)
-        top = int(self._zoom_center[1] * height - crop_h / 2)
-        left = max(0, min(width - crop_w, left))
-        top = max(0, min(height - crop_h, top))
-
-        geometry = "" if self._zoom <= MIN_ZOOM else f"{crop_w}x{crop_h}+{left}+{top}"
-        try:
-            player.video_set_crop_geometry(geometry)
-        except Exception:  # noqa: BLE001
-            logger.debug("Could not apply crop geometry %r", geometry, exc_info=True)
+        width = int(area.width() * self._zoom)
+        height = int(area.height() * self._zoom)
+        left = min(0.0, max(float(area.width() - width), self._offset[0]))
+        top = min(0.0, max(float(area.height() - height), self._offset[1]))
+        self._offset = (left, top)
+        self.video_widget.setGeometry(int(left), int(top), width, height)
 
     def wheelEvent(self, event: QWheelEvent) -> None:
-        """Wheel over the picture zooms in and out, centred on the cursor."""
+        """Wheel over the picture zooms in and out, pinned to the cursor."""
         steps = event.angleDelta().y() / 120.0
         if not steps:
             super().wheelEvent(event)
             return
 
-        area = self.video_widget.geometry()
-        position = event.position().toPoint() - area.topLeft()
-        center = None
-        if area.width() and area.height():
-            center = (
-                position.x() / area.width(),
-                position.y() / area.height(),
-            )
-        self.zoom_by(ZOOM_STEP**steps, center)
+        anchor = self._video_area.mapFrom(self, event.position().toPoint())
+        self.zoom_by(ZOOM_STEP**steps, anchor)
         event.accept()
 
     def set_selected(self, selected: bool) -> None:
@@ -645,11 +675,23 @@ class VideoTile(QWidget):
         return menu
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        if (
-            self._drag_origin is None
-            or self.grid_position is None
-            or not (event.buttons() & Qt.MouseButton.LeftButton)
+        if self._drag_origin is None or not (
+            event.buttons() & Qt.MouseButton.LeftButton
         ):
+            super().mouseMoveEvent(event)
+            return
+
+        if self._zoom > MIN_ZOOM:
+            # Zoomed in, dragging moves the picture rather than the cell:
+            # there is hidden image to reach, and the cell can still be
+            # moved from the mosaic view.
+            delta = event.position().toPoint() - self._drag_origin
+            self._drag_origin = event.position().toPoint()
+            self.pan_by(delta.x(), delta.y())
+            event.accept()
+            return
+
+        if self.grid_position is None:
             super().mouseMoveEvent(event)
             return
 

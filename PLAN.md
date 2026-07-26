@@ -24,6 +24,38 @@ validada antes de avançar para a próxima.
 - [x] Fase 10 — Testes
 - [x] Fase 11 — Empacotamento e documentação final
 
+## 0.2.0 — zoom refeito (relato do usuário: "o zoom não ficou legal")
+
+Dois sintomas relatados: **ampliava no lugar errado** e **saía esticado
+ou cortado**. Ambos vinham da mesma escolha ruim — usar o filtro de
+recorte do libVLC (`video_set_crop_geometry`) e converter a posição do
+cursor em coordenadas da imagem *ignorando as barras pretas* que a célula
+tem quando a proporção do vídeo não bate com a dela.
+
+**Refeito como geometria de widget, sem libVLC nenhum no caminho:** o
+widget de vídeo agora mora dentro de um `_VideoArea` que o recorta.
+Ampliar é torná-lo N vezes maior que essa área e deslocá-lo; o que sai da
+área fica escondido. Consequências:
+
+- **Não distorce**: os dois eixos crescem pelo mesmo fator, por
+  construção.
+- **O ponto sob o cursor fica parado de verdade**, porque a conta é feita
+  em coordenadas do widget — as mesmas do evento do mouse. Não há mais
+  conversão para coordenadas da imagem, que era onde estava o erro.
+- **Ganhou arrastar** de graça: com zoom, arrastar move a imagem (a
+  célula só é movida de lugar quando não há zoom, onde não há nada
+  escondido para alcançar).
+- O deslocamento é limitado para a imagem nunca deixar faixa vazia.
+
+Validado ao vivo (câmera 1280x720 numa célula de 415x198): 1x → vídeo
+exatamente do tamanho da área; 4 passos ancorados no quarto superior
+esquerdo → vídeo 1013x483 deslocado para (-147,-69), centro visível
+caminhando de (0,50; 0,50) para (0,35; 0,35); normalizar → volta exato.
+
+Também corrigido nesse caminho: depois de mover o widget de vídeo para
+dentro da nova área, o `QStackedLayout` continuava recebendo o widget
+antigo em `setCurrentWidget` (erro no console, página de status errada).
+
 ## Depois da 0.1.0 — câmera avulsa e canais mortos (pedido do usuário)
 
 Observação do usuário: "fizemos pensando em NVR né — se eu adicionar uma
@@ -67,12 +99,7 @@ Validado ao vivo no `NVR A`: 15 células reproduzindo, 1 estacionada com
 
 ## Depois da 0.1.0 — zoom, navegação e atalhos (pedido do usuário)
 
-- **Zoom digital por recorte.** `VideoTile.zoom_by()` calcula uma região
-  da imagem e a aplica com `video_set_crop_geometry`. Recortar em vez de
-  escalar mantém a célula preenchida em qualquer zoom — é o que um zoom
-  digital deve parecer. O zoom acompanha o cursor (sem isso, cada passo
-  volta ao centro do quadro) e é reaplicado em `_on_playing`, porque
-  mídia nova começa sem recorte.
+- **Zoom digital por geometria** (refeito na 0.2.0 — ver abaixo).
 - **Navegação entre câmeras** (`VideoGrid.step`), pulando células vazias e
   dando a volta. Decisão de desempenho tomada durante a validação real:
   ao passar de câmera, a célula é maximizada **sem** trocar o stream, e a
