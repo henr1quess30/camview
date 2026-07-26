@@ -225,4 +225,4 @@ class TestToolbar:
             window.layout_selector.itemText(i)
             for i in range(window.layout_selector.count())
         ]
-        assert shapes == ["1x1", "2x2", "3x3", "4x4"]
+        assert shapes == ["1x1", "2x2", "3x3", "4x4", "1+5", "1+7", "1+12"]

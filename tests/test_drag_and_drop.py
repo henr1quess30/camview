@@ -23,6 +23,7 @@ from camview.ui.widgets.device_tree import (
     CAMERA_MIME_TYPE,
     DeviceTree,
 )
+from camview.ui.widgets.grid_shapes import GRID_SHAPES
 from camview.ui.widgets.video_grid import VideoGrid
 from camview.ui.widgets.video_tile import GRID_POSITION_MIME_TYPE, VideoTile
 
@@ -65,7 +66,7 @@ def cell_center(grid: VideoGrid, position: int) -> QPoint:
 
 @pytest.fixture
 def grid(qapp: QApplication, fake_instance: FakeInstance) -> VideoGrid:
-    widget = VideoGrid(rows=2, columns=2)
+    widget = VideoGrid(shape=GRID_SHAPES["2x2"])
     widget.resize(400, 400)
     widget.show()
     QApplication.processEvents()

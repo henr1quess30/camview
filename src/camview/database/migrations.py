@@ -91,6 +91,17 @@ def _apply_v2_device_type(connection: sqlite3.Connection) -> None:
     )
 
 
+def _apply_v3_layout_shape(connection: sqlite3.Connection) -> None:
+    """Name the arrangement a layout was saved with.
+
+    Empty means "the plain rows x columns grid", which is all any layout
+    saved before this column could have been.
+    """
+    connection.execute(
+        "ALTER TABLE layouts ADD COLUMN shape TEXT NOT NULL DEFAULT ''"
+    )
+
+
 MIGRATIONS: list[Migration] = [
     Migration(
         version=1,
@@ -101,6 +112,11 @@ MIGRATIONS: list[Migration] = [
         version=2,
         description="Add nvrs.device_type to support standalone cameras",
         apply=_apply_v2_device_type,
+    ),
+    Migration(
+        version=3,
+        description="Add layouts.shape for non-uniform mosaics",
+        apply=_apply_v3_layout_shape,
     ),
 ]
 

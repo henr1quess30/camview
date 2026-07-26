@@ -22,31 +22,15 @@ from PySide6.QtWidgets import (
 
 from camview.models.camera import StreamType
 from camview.ui.widgets.device_tree import CAMERA_MIME_TYPE
+from camview.ui.widgets.grid_shapes import (
+    GRID_SHAPES,
+    GridShape,
+    shape_for_grid,
+    smallest_shape_for,
+)
 from camview.ui.widgets.video_tile import GRID_POSITION_MIME_TYPE, VideoTile
 
 logger = logging.getLogger(__name__)
-
-#: Grid shapes offered in the toolbar, as (rows, columns). Ordered smallest
-#: first, which :func:`smallest_shape_for` relies on.
-GRID_SHAPES: dict[str, tuple[int, int]] = {
-    "1x1": (1, 1),
-    "2x2": (2, 2),
-    "3x3": (3, 3),
-    "4x4": (4, 4),
-}
-
-
-def smallest_shape_for(camera_count: int) -> tuple[int, int]:
-    """Smallest offered grid that fits ``camera_count`` cameras.
-
-    Falls back to the largest shape when there are more cameras than
-    cells; the caller decides what to do with the overflow.
-    """
-    for rows, columns in GRID_SHAPES.values():
-        if rows * columns >= camera_count:
-            return rows, columns
-    return GRID_SHAPES["4x4"]
-
 
 #: Shown in empty cells. Tells a first-time user what to do with them.
 EMPTY_CELL_HINT = "Arraste uma câmera aqui"
@@ -94,11 +78,12 @@ class VideoGrid(QWidget):
     contentsChanged = Signal()
 
     def __init__(
-        self, rows: int = 2, columns: int = 2, parent: QWidget | None = None
+        self,
+        shape: GridShape | None = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self.rows = rows
-        self.columns = columns
+        self._shape = shape or GRID_SHAPES["2x2"]
         self._tiles: dict[int, VideoTile] = {}
         self._empty_cells: dict[int, _EmptyCell] = {}
         self._selected_position: int | None = None
@@ -124,22 +109,37 @@ class VideoGrid(QWidget):
     # ------------------------------------------------------------------
 
     @property
-    def cell_count(self) -> int:
-        return self.rows * self.columns
+    def shape(self) -> GridShape:
+        return self._shape
 
-    def set_grid_shape(self, rows: int, columns: int) -> None:
-        """Change the grid shape, closing any streams that no longer fit."""
-        if (rows, columns) == (self.rows, self.columns):
+    @property
+    def rows(self) -> int:
+        return self._shape.rows
+
+    @property
+    def columns(self) -> int:
+        return self._shape.columns
+
+    @property
+    def cell_count(self) -> int:
+        return self._shape.cell_count
+
+    def set_shape(self, shape: GridShape) -> None:
+        """Change the arrangement, closing any streams that no longer fit."""
+        if shape.label == self._shape.label:
             return
 
         self.restore()
         for position in sorted(self._tiles):
-            if position >= rows * columns:
+            if position >= shape.cell_count:
                 self.remove_tile(position)
 
-        self.rows = rows
-        self.columns = columns
+        self._shape = shape
         self._rebuild()
+
+    def set_grid_shape(self, rows: int, columns: int) -> None:
+        """Change to a plain ``rows x columns`` grid."""
+        self.set_shape(shape_for_grid(rows, columns))
 
     def _rebuild(self) -> None:
         """Re-place every cell widget according to the current shape."""
@@ -150,16 +150,17 @@ class VideoGrid(QWidget):
             cell.deleteLater()
         self._empty_cells.clear()
 
-        for position in range(self.cell_count):
-            row, column = divmod(position, self.columns)
+        for position, (row, column, row_span, column_span) in enumerate(
+            self._shape.cells
+        ):
             tile = self._tiles.get(position)
             if tile is not None:
-                self._layout.addWidget(tile, row, column)
+                self._layout.addWidget(tile, row, column, row_span, column_span)
                 tile.show()
             else:
                 empty = _EmptyCell(self)
                 self._empty_cells[position] = empty
-                self._layout.addWidget(empty, row, column)
+                self._layout.addWidget(empty, row, column, row_span, column_span)
                 empty.show()
 
         for row in range(self.rows):
@@ -462,8 +463,7 @@ class VideoGrid(QWidget):
 
     def position_at(self, point) -> int | None:  # type: ignore[no-untyped-def]
         """Which cell contains ``point`` (widget coordinates)?"""
-        for position in range(self.cell_count):
-            row, column = divmod(position, self.columns)
+        for position, (row, column, _, _) in enumerate(self._shape.cells):
             item = self._layout.itemAtPosition(row, column)
             if item is not None and item.geometry().contains(point):
                 return position

@@ -7,6 +7,7 @@ import sqlite3
 from PySide6.QtWidgets import QApplication
 
 from camview.ui.main_window import MainWindow
+from camview.ui.widgets.grid_shapes import GRID_SHAPES
 
 
 def test_main_window_constructs(
@@ -16,7 +17,7 @@ def test_main_window_constructs(
     try:
         assert window.windowTitle() == "CamView"
         assert window.device_tree is not None
-        assert window.layout_selector.count() == 4
+        assert window.layout_selector.count() == len(GRID_SHAPES)
         assert window.statusBar().currentMessage() == "Pronto"
     finally:
         window.close()

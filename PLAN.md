@@ -24,6 +24,33 @@ validada antes de avançar para a próxima.
 - [x] Fase 10 — Testes
 - [x] Fase 11 — Empacotamento e documentação final
 
+## Mosaicos com célula destacada (pedido do usuário)
+
+Além das grades uniformes, três arranjos onde uma câmera ganha um bloco
+grande e as demais ficam em volta: **1+5** (base 3x3), **1+7** (4x4) e
+**1+12** (4x4, a grande no meio). É como se acompanha um local de
+verdade — uma vista que importa e as outras no canto do olho.
+
+- **Uma forma é o grid base mais os retângulos que suas células ocupam**
+  (`ui/widgets/grid_shapes.py`). O `VideoGrid` deixou de guardar
+  linhas/colunas e passou a guardar a forma; `rows`/`columns` viraram
+  propriedades, então o resto do código não mudou.
+- **A numeração das posições foi preservada**: as células são listadas em
+  ordem de leitura, então para grades uniformes `position` continua sendo
+  `linha * colunas + coluna` — se isso mudasse, todo layout já salvo
+  embaralharia sozinho. Há teste fixando isso.
+- **A forma é salva no layout** (migração 3, coluna `layouts.shape`).
+  Vazio significa "a grade uniforme de rows x columns", que é tudo o que
+  um layout salvo antes disso poderia ser.
+- **Auto-ajuste só escolhe formas uniformes**: abrir um NVR inteiro é
+  "me mostre tudo", onde destacar uma câmera qualquer seria arbitrário.
+- Invariantes cobertos por teste para todas as formas: nenhuma célula sai
+  do grid, nenhuma se sobrepõe e não sobra quadrado vazio.
+
+Validado ao vivo no `NVR A` com o 1+7: Canal 1 ocupando 3x3 e os outros
+sete na borda, todos reproduzindo; salvo como layout e recarregado
+idêntico depois de forçar um 2x2 no meio.
+
 ## Painel de status (pedido do usuário, inspirado no Shinobi)
 
 O usuário gosta do cartão de uso do Shinobi. Adaptado ao que este app

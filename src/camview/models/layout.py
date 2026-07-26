@@ -10,11 +10,17 @@ from camview.models.camera import StreamType
 
 @dataclass(slots=True)
 class Layout:
-    """A saved mosaic layout's grid shape. Positions live in ``LayoutItem``."""
+    """A saved mosaic layout's arrangement. Positions live in ``LayoutItem``.
+
+    ``shape`` names the arrangement ("2x2", "1+5"). ``rows``/``columns``
+    describe the base grid and are kept because layouts saved before
+    named shapes existed only have those.
+    """
 
     name: str
     rows: int
     columns: int
+    shape: str = ""
     id: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None

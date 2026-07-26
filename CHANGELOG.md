@@ -6,6 +6,10 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
 ### Adicionado
 
+- **Mosaicos com célula destacada**: além de 1x1 a 4x4, agora há **1+5**,
+  **1+7** e **1+12** — uma câmera ocupando um bloco grande e as demais
+  em volta. A escolha é salva junto com o layout.
+
 - **Painel de status na barra lateral** (inspirado no Shinobi): relógio e
   data, uso de CPU e memória do processo, quantas câmeras estão de fato
   reproduzindo e a banda consumida pelos streams. Sem uso de disco — o

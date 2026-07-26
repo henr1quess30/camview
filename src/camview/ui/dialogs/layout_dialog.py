@@ -88,9 +88,11 @@ class LayoutManagerDialog(QDialog):
         self.list_widget.clear()
         for layout in self._layout_repository.list_all():
             cameras = len(self._layout_repository.get_items(layout.id))  # type: ignore[arg-type]
+            # Prefer the shape's own name: a "1+7" layout is stored on a
+            # 4x4 base grid, and calling it 4x4 here would be a lie.
+            arrangement = layout.shape or f"{layout.rows}x{layout.columns}"
             item = QListWidgetItem(
-                f"{layout.name}  —  {layout.rows}x{layout.columns}, "
-                f"{cameras} câmera(s)"
+                f"{layout.name}  —  {arrangement}, {cameras} câmera(s)"
             )
             item.setData(LAYOUT_ID_ROLE, layout.id)
             self.list_widget.addItem(item)

@@ -64,7 +64,14 @@ from camview.ui.dialogs.nvr_dialog import NvrDialog
 from camview.ui.dialogs.settings_dialog import SettingsDialog
 from camview.ui.widgets.device_tree import CAMERA_ID_ROLE, NVR_ID_ROLE, DeviceTree
 from camview.ui.widgets.status_panel import STATS_INTERVAL_MS, StatusPanel
-from camview.ui.widgets.video_grid import GRID_SHAPES, VideoGrid, smallest_shape_for
+from camview.ui.widgets.grid_shapes import (
+    GRID_SHAPES,
+    GridShape,
+    shape_for_grid,
+    shape_for_label,
+    smallest_shape_for,
+)
+from camview.ui.widgets.video_grid import VideoGrid
 from camview.ui.widgets.video_tile import ZOOM_STEP, ConnectionStatus, VideoTile
 
 logger = logging.getLogger(__name__)
@@ -228,8 +235,7 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
 
     def _build_central_widget(self) -> None:
-        rows, columns = GRID_SHAPES[DEFAULT_GRID_SHAPE]
-        self.video_grid = VideoGrid(rows=rows, columns=columns)
+        self.video_grid = VideoGrid(shape=GRID_SHAPES[DEFAULT_GRID_SHAPE])
         self.video_grid.cameraDropped.connect(self._on_camera_dropped)
         self.setCentralWidget(self.video_grid)
 
@@ -430,7 +436,7 @@ class MainWindow(QMainWindow):
             )
             self._settings_repository.set(
                 SETTING_GRID_SHAPE,
-                f"{self.video_grid.rows}x{self.video_grid.columns}",
+                self.video_grid.shape.label,
             )
             if self._current_layout_id is None:
                 self._settings_repository.delete(SETTING_LAST_LAYOUT_ID)
@@ -463,9 +469,9 @@ class MainWindow(QMainWindow):
         if self._settings.start_maximized:
             self.setWindowState(self.windowState() | Qt.WindowState.WindowMaximized)
 
-        shape = GRID_SHAPES.get(settings.get(SETTING_GRID_SHAPE, ""))
+        shape = shape_for_label(settings.get(SETTING_GRID_SHAPE, ""))
         if shape is not None:
-            self._apply_grid_shape(*shape)
+            self._apply_shape(shape)
 
         if self._settings.restore_last_layout:
             self._restore_last_layout(settings.get(SETTING_LAST_LAYOUT_ID))
@@ -793,16 +799,27 @@ class MainWindow(QMainWindow):
             )
             return
 
-        rows, columns = self.video_grid.rows, self.video_grid.columns
+        shape = self.video_grid.shape
         try:
             if existing is None:
                 layout = self._layout_repository.create(
-                    Layout(name=name, rows=rows, columns=columns)
+                    Layout(
+                        name=name,
+                        rows=shape.rows,
+                        columns=shape.columns,
+                        shape=shape.label,
+                    )
                 )
             else:
                 layout = existing
-                self._layout_repository.update_shape(layout.id, rows, columns)  # type: ignore[arg-type]
-                layout.rows, layout.columns = rows, columns
+                self._layout_repository.update_shape(
+                    layout.id,  # type: ignore[arg-type]
+                    shape.rows,
+                    shape.columns,
+                    shape.label,
+                )
+                layout.rows, layout.columns = shape.rows, shape.columns
+                layout.shape = shape.label
             self._layout_repository.set_items(
                 layout.id,  # type: ignore[arg-type]
                 self._capture_layout_items(layout.id),  # type: ignore[arg-type]
@@ -842,7 +859,9 @@ class MainWindow(QMainWindow):
             self._report_error("Não foi possível carregar o layout", exc)
             return
         self.video_grid.clear()
-        self._apply_grid_shape(layout.rows, layout.columns)
+        self._apply_shape(
+            shape_for_label(layout.shape) or shape_for_grid(layout.rows, layout.columns)
+        )
 
         # One password lookup per NVR, not per cell: a device with no stored
         # password must warn once, and every cell would hit the keyring.
@@ -989,7 +1008,7 @@ class MainWindow(QMainWindow):
     def _open_camera_fullscreen(self, camera_id: int) -> None:
         """Show one camera on its own, filling the window."""
         self.video_grid.clear()
-        self._apply_grid_shape(1, 1)
+        self._apply_shape(GRID_SHAPES["1x1"])
         self._set_current_layout(None)
         self._open_camera_at(camera_id, 0)
 
@@ -1121,14 +1140,14 @@ class MainWindow(QMainWindow):
         if password is None:
             return
 
-        rows, columns = smallest_shape_for(len(cameras))
+        shape = smallest_shape_for(len(cameras))
         self.video_grid.clear()
-        self._apply_grid_shape(rows, columns)
+        self._apply_shape(shape)
         # This wholesale replaces the screen, so it is no longer the saved
         # layout that was loaded — keep the window title honest.
         self._set_current_layout(None)
 
-        visible = cameras[: rows * columns]
+        visible = cameras[: shape.cell_count]
         stream_type = self._mosaic_stream_type(nvr.default_stream)
         for position, camera in enumerate(visible):
             self._place_camera(camera, nvr, password, position, stream_type)
@@ -1138,11 +1157,11 @@ class MainWindow(QMainWindow):
             message += f" ({len(cameras) - len(visible)} não cabem no mosaico.)"
         self.statusBar().showMessage(message, 5000)
 
-    def _apply_grid_shape(self, rows: int, columns: int) -> None:
-        """Reshape the grid and keep the toolbar selector in sync."""
-        self.video_grid.set_grid_shape(rows, columns)
+    def _apply_shape(self, shape: GridShape) -> None:
+        """Reshape the mosaic and keep the toolbar selector in sync."""
+        self.video_grid.set_shape(shape)
         with QSignalBlocker(self.layout_selector):
-            self.layout_selector.setCurrentText(f"{rows}x{columns}")
+            self.layout_selector.setCurrentText(shape.label)
 
     def _mosaic_stream_type(self, nvr_default: StreamType) -> StreamType:
         """Which stream a newly opened mosaic cell should use.
@@ -1164,8 +1183,8 @@ class MainWindow(QMainWindow):
         self._open_camera_at(camera_id, position)
 
     def _on_grid_shape_changed(self, label: str) -> None:
-        shape = GRID_SHAPES.get(label)
+        shape = shape_for_label(label)
         if shape is None:
             return
-        self.video_grid.set_grid_shape(*shape)
+        self.video_grid.set_shape(shape)
         self.statusBar().showMessage(f"Mosaico {label}.", 3000)

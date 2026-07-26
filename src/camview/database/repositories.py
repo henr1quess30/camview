@@ -173,8 +173,9 @@ class LayoutRepository:
     def create(self, layout: Layout) -> Layout:
         with self._connection:
             cursor = self._connection.execute(
-                "INSERT INTO layouts (name, rows, columns) VALUES (?, ?, ?)",
-                (layout.name, layout.rows, layout.columns),
+                "INSERT INTO layouts (name, rows, columns, shape) "
+                "VALUES (?, ?, ?, ?)",
+                (layout.name, layout.rows, layout.columns, layout.shape),
             )
         created = self.get(cursor.lastrowid)
         assert created is not None
@@ -203,16 +204,18 @@ class LayoutRepository:
                 (new_name, layout_id),
             )
 
-    def update_shape(self, layout_id: int, rows: int, columns: int) -> None:
-        """Change a saved layout's grid shape (used when overwriting it)."""
+    def update_shape(
+        self, layout_id: int, rows: int, columns: int, shape: str = ""
+    ) -> None:
+        """Change a saved layout's arrangement (used when overwriting it)."""
         with self._connection:
             self._connection.execute(
                 """
                 UPDATE layouts
-                SET rows = ?, columns = ?, updated_at = datetime('now')
+                SET rows = ?, columns = ?, shape = ?, updated_at = datetime('now')
                 WHERE id = ?
                 """,
-                (rows, columns, layout_id),
+                (rows, columns, shape, layout_id),
             )
 
     def delete(self, layout_id: int) -> None:
@@ -259,6 +262,7 @@ class LayoutRepository:
             name=row["name"],
             rows=row["rows"],
             columns=row["columns"],
+            shape=row["shape"],
             created_at=_parse_datetime(row["created_at"]),
             updated_at=_parse_datetime(row["updated_at"]),
         )

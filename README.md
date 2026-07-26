@@ -99,8 +99,8 @@ tela e registro no log, nunca um fechamento inesperado.
 Rodar os testes:
 
 ```bash
-pytest                                    # 324 testes, roda sem display
-pytest --cov=camview --cov-report=term-missing   # cobertura (92%)
+pytest                                    # 454 testes, roda sem display
+pytest --cov=camview --cov-report=term-missing   # cobertura
 ```
 
 A suíte nunca abre janela nem acessa a rede: usa `QT_QPA_PLATFORM=offscreen`
@@ -135,9 +135,10 @@ src/camview/
 Em desenvolvimento incremental. Veja [PLAN.md](PLAN.md) para o roteiro
 completo de fases e o que já foi concluído.
 
-**Versão 0.1.0 — as 12 fases do [PLAN.md](PLAN.md) estão concluídas.**
-Validado contra oito NVRs Hikvision reais, com até 16 streams simultâneos.
-Veja o [CHANGELOG.md](CHANGELOG.md) para o resumo do que a versão entrega.
+**Versão 0.2.0** — as 12 fases do [PLAN.md](PLAN.md) estão concluídas, e o
+desenvolvimento segue com melhorias pedidas em uso real. Validado contra
+dez NVRs Hikvision, com até 16 streams simultâneos. Veja o
+[CHANGELOG.md](CHANGELOG.md).
 
 A interface segue o tema do sistema (ícones e cores do KDE Plasma,
 inclusive no modo escuro) — não há tema próprio embutido.
@@ -158,7 +159,10 @@ Como usar hoje:
   volta ao mosaico. Ao maximizar, a câmera troca automaticamente para o
   stream principal (mais nitidez na tela cheia) e volta ao substream ao
   restaurar.
-- O seletor na barra superior alterna entre **1x1, 2x2, 3x3 e 4x4**.
+- O seletor na barra superior alterna entre os mosaicos **1x1, 2x2, 3x3,
+  4x4** e os de célula destacada **1+5, 1+7 e 1+12** — uma câmera grande
+  com as demais em volta, que é como se costuma acompanhar um local:
+  uma vista que importa e as outras no canto do olho.
 - O cabeçalho de cada célula mostra **SUB** ou **PRINCIPAL**, indicando qual
   stream está em uso, e a barra inferior mostra quantas células estão
   ocupadas.

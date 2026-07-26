@@ -12,6 +12,7 @@ from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QApplication
 
 from camview.models.camera import StreamType
+from camview.ui.widgets.grid_shapes import GRID_SHAPES
 from camview.ui.widgets.video_grid import GRID_SHAPES, VideoGrid
 from camview.ui.widgets.video_tile import VideoTile
 
@@ -55,19 +56,27 @@ class TestGridShape:
         assert grid.cell_count == 4
 
     @pytest.mark.parametrize(
-        ("label", "expected"), [("1x1", 1), ("2x2", 4), ("3x3", 9), ("4x4", 16)]
+        ("label", "expected"),
+        [
+            ("1x1", 1),
+            ("2x2", 4),
+            ("3x3", 9),
+            ("4x4", 16),
+            ("1+5", 6),
+            ("1+7", 8),
+            ("1+12", 13),
+        ],
     )
     def test_all_offered_shapes(
         self, qapp: QApplication, label: str, expected: int
     ) -> None:
-        rows, columns = GRID_SHAPES[label]
-        grid = VideoGrid(rows=rows, columns=columns)
+        grid = VideoGrid(shape=GRID_SHAPES[label])
         assert grid.cell_count == expected
 
     def test_growing_the_grid_keeps_existing_tiles(
         self, qapp: QApplication, fake_instance: FakeInstance
     ) -> None:
-        grid = VideoGrid(rows=2, columns=2)
+        grid = VideoGrid(shape=GRID_SHAPES["2x2"])
         grid.place_tile(0, make_tile("A"))
         grid.place_tile(3, make_tile("B"))
 
@@ -80,7 +89,7 @@ class TestGridShape:
     def test_shrinking_closes_tiles_that_no_longer_fit(
         self, qapp: QApplication, fake_instance: FakeInstance
     ) -> None:
-        grid = VideoGrid(rows=3, columns=3)
+        grid = VideoGrid(shape=GRID_SHAPES["3x3"])
         place_connected_tile(grid, 0, "A")
         place_connected_tile(grid, 8, "B")
         dropped_player = fake_instance.players[-1]
@@ -97,7 +106,7 @@ class TestPlacement:
     def test_first_free_position_scans_in_order(
         self, qapp: QApplication, fake_instance: FakeInstance
     ) -> None:
-        grid = VideoGrid(rows=2, columns=2)
+        grid = VideoGrid(shape=GRID_SHAPES["2x2"])
         assert grid.first_free_position() == 0
 
         grid.place_tile(0, make_tile())
@@ -109,7 +118,7 @@ class TestPlacement:
     def test_first_free_position_is_none_when_full(
         self, qapp: QApplication, fake_instance: FakeInstance
     ) -> None:
-        grid = VideoGrid(rows=1, columns=1)
+        grid = VideoGrid(shape=GRID_SHAPES["1x1"])
         grid.place_tile(0, make_tile())
         assert grid.first_free_position() is None
 
@@ -136,7 +145,7 @@ class TestPlacement:
     def test_position_outside_the_grid_is_rejected(
         self, qapp: QApplication, fake_instance: FakeInstance
     ) -> None:
-        grid = VideoGrid(rows=2, columns=2)
+        grid = VideoGrid(shape=GRID_SHAPES["2x2"])
         with pytest.raises(ValueError):
             grid.place_tile(4, make_tile())
 
@@ -389,7 +398,7 @@ class TestMaximize:
     def test_changing_grid_shape_restores_first(
         self, qapp: QApplication, fake_instance: FakeInstance
     ) -> None:
-        grid = VideoGrid(rows=2, columns=2)
+        grid = VideoGrid(shape=GRID_SHAPES["2x2"])
         grid.place_tile(0, make_tile())
         grid.maximize(0)
 
@@ -402,7 +411,7 @@ class TestPositionAt:
     def test_maps_points_to_the_right_cells(
         self, qapp: QApplication
     ) -> None:
-        grid = VideoGrid(rows=2, columns=2)
+        grid = VideoGrid(shape=GRID_SHAPES["2x2"])
         grid.resize(400, 400)
         grid.show()
         qapp.processEvents()
@@ -413,7 +422,7 @@ class TestPositionAt:
         grid.close()
 
     def test_point_outside_any_cell_returns_none(self, qapp: QApplication) -> None:
-        grid = VideoGrid(rows=2, columns=2)
+        grid = VideoGrid(shape=GRID_SHAPES["2x2"])
         grid.resize(400, 400)
         grid.show()
         qapp.processEvents()
@@ -478,7 +487,7 @@ class TestStreamSwitchOnMaximize:
         self, qapp: QApplication, fake_instance: FakeInstance
     ) -> None:
         """1x1 grids already use the NVR default, so there is nothing to switch."""
-        grid = VideoGrid(rows=1, columns=1)
+        grid = VideoGrid(shape=GRID_SHAPES["1x1"])
         tile = VideoTile(
             title="Canal", stream_urls=STREAM_URLS, stream_type=StreamType.MAIN
         )

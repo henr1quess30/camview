@@ -23,6 +23,7 @@ from camview.services.credentials import set_nvr_password
 from camview.services.rtsp import generate_missing_channel_cameras
 from camview.services.settings import save_settings
 from camview.ui.main_window import MainWindow
+from camview.ui.widgets.grid_shapes import GRID_SHAPES
 from camview.ui.widgets.video_grid import VideoGrid
 from camview.ui.widgets.video_tile import (
     MAX_ZOOM,
@@ -255,7 +256,7 @@ class TestWheelZoom:
 class TestGridNavigation:
     @pytest.fixture
     def grid(self, qapp: QApplication, fake_instance: FakeInstance) -> VideoGrid:
-        widget = VideoGrid(rows=2, columns=2)
+        widget = VideoGrid(shape=GRID_SHAPES["2x2"])
         for position in (0, 1, 3):
             widget.place_tile(
                 position, VideoTile(title=f"Canal {position}", stream_urls=STREAM_URLS)
@@ -352,7 +353,7 @@ class TestGridNavigation:
     def test_stepping_an_empty_grid_does_nothing(
         self, qapp: QApplication, fake_instance: FakeInstance
     ) -> None:
-        empty = VideoGrid(rows=2, columns=2)
+        empty = VideoGrid(shape=GRID_SHAPES["2x2"])
 
         empty.step(1)  # must not raise
 
