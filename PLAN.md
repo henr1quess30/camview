@@ -52,6 +52,33 @@ substitui o tarball no lugar, o que quebraria o checksum.
 Permissões deliberadamente enxutas: rede, X11 (exigência do libVLC),
 `dri` e o serviço de segredos para o keyring. Sem acesso à pasta pessoal.
 
+### O que só apareceu construindo de verdade
+
+Cinco correções no manifesto, todas descobertas rodando o build, nenhuma
+delas óbvia na documentação:
+
+1. **PySide6 não se instala do PyPI.** O `flatpak-pip-generator` recusa e
+   aponta o `io.qt.PySide.BaseApp` — que é o caminho suportado e evita
+   embarcar uma segunda cópia inteira do Qt. Isso troca o runtime para o
+   `org.kde.Platform`.
+2. **Runtime 6.8 está em fim de vida** (o Flathub rejeitaria); 6.9.
+3. **Baixar o `flatpak-pip-generator` pelo nome simples** devolve o texto
+   de um symlink, não o script. É preciso pedir o `.py`. E ele é um
+   script PEP 723 com dependência própria, então ganhou um virtualenv
+   descartável no `build.sh`.
+4. **`BUILDCC=gcc`**: o configure do VLC procura um compilador chamado
+   literalmente `c99`/`c11` para as ferramentas de build dele; o SDK só
+   tem `gcc`.
+5. **Caminho dos headers do live555**: a verificação do VLC é um
+   `#include <liveMedia_version.hh>` do pré-processador — a mensagem diz
+   "atualize o live555", mas o que falha é o caminho. O live555 instala
+   um diretório por biblioteca, então os quatro precisam entrar em
+   `cppflags`.
+
+Também: o Flatpak tem banco próprio, então quem já usava o app começaria
+sem nenhum NVR — daí o `migrate-data.sh`. As senhas não precisam de
+migração, já que ficam no keyring do sistema, acessado pelo portal.
+
 **Aviso de atualização** (`services/updates.py`): consulta a API pública
 do GitHub e mostra um link na barra inferior. Só verifica — baixar e
 instalar é do gerenciador, que faz isso melhor e é em quem o usuário
