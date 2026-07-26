@@ -29,11 +29,17 @@ flatpak install --user --noninteractive flathub \
     "org.kde.Sdk//${RUNTIME_VERSION}" \
     "io.qt.PySide.BaseApp//${BASEAPP_VERSION}"
 
+# H.265 lives in this extension, not in the runtime's ffmpeg. Installing
+# from Flathub pulls it in automatically; a local build does not, and the
+# symptom is cruel — cameras connect and then close instantly, as if the
+# stream were refused.
+flatpak install --user --noninteractive flathub \
+    "org.freedesktop.Platform.ffmpeg-full//24.08"
+
 # flatpak-builder builds offline, so every wheel must be declared with its
-# checksum up front. flatpak-pip-generator resolves requirements.txt into
-# exactly that. It is a single script from flatpak-builder-tools.
-if [ ! -f python3-requirements.json ] || [ requirements.txt -nt python3-requirements.json ]; then
-    echo "==> Resolvendo dependências Python (flatpak-pip-generator)"
+# checksum up front. flatpak-pip-generator resolves that from a plain
+# requirements list. It is a single script from flatpak-builder-tools.
+ensure_generator() {
     if [ ! -f flatpak-pip-generator ]; then
         # The plain name in that repo is a symlink; fetching it over raw
         # gives the link's text, not the script. Take the .py directly.
@@ -47,11 +53,19 @@ if [ ! -f python3-requirements.json ] || [ requirements.txt -nt python3-requirem
         python3 -m venv .gen-venv
         .gen-venv/bin/pip install --quiet requirements-parser
     fi
-    # --runtime makes it resolve wheels for the runtime's Python, not the
-    # host's — the ABI tags have to match or nothing imports.
+}
+
+if [ ! -f python3-requirements.json ] || [ requirements.txt -nt python3-requirements.json ]; then
+    echo "==> Resolvendo dependências de execução"
+    ensure_generator
+    # --runtime resolves wheels for the runtime's Python, not the host's:
+    # the ABI tags have to match or nothing imports.
+    # --prefer-wheels for cryptography/cffi: their sdists want Rust and
+    # maturin, which the SDK has not got. Both publish abi3 wheels.
     .gen-venv/bin/python flatpak-pip-generator \
         --runtime="org.kde.Sdk//${RUNTIME_VERSION}" \
         --requirements-file=requirements.txt \
+        --prefer-wheels=cryptography,cffi \
         --output=python3-requirements
 fi
 

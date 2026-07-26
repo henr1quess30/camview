@@ -59,6 +59,10 @@ modules:
   - name: live555
     buildsystem: simple
     build-commands:
+      # -DNO_OPENSSL=1, exactly as VLC's own contrib builds it: recent
+      # live555 pulls in OpenSSL for RTSPS, and without it the plugin
+      # fails to link on EVP_MD_CTX_free. Plain RTSP needs none of it.
+      - sed -i 's|^COMPILE_OPTS =\(.*\)|COMPILE_OPTS =\1 -DNO_OPENSSL=1|' config.linux-64bit
       - ./genMakefiles linux-64bit
       - make -j$FLATPAK_BUILDER_N_JOBS
       - make install PREFIX=/app
@@ -118,7 +122,14 @@ modules:
   - name: camview
     buildsystem: simple
     build-commands:
-      - pip3 install --no-deps --no-build-isolation --prefix=/app .
+      # Copied rather than pip-installed. CamView is a pure-Python
+      # src-layout package, so pip adds nothing except a dependency on
+      # its build backend — which it would have to fetch from a network
+      # the sandbox does not have.
+      - PYVER=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+        && install -d "/app/lib/python${PYVER}/site-packages"
+        && cp -r src/camview "/app/lib/python${PYVER}/site-packages/"
+      - install -Dm755 packaging/flatpak/camview-launcher /app/bin/camview
       - install -Dm644 packaging/flatpak/io.github.henr1quess30.CamView.desktop
         /app/share/applications/io.github.henr1quess30.CamView.desktop
       - install -Dm644 packaging/flatpak/io.github.henr1quess30.CamView.metainfo.xml

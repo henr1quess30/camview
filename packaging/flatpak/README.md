@@ -24,6 +24,17 @@ flatpak run io.github.henr1quess30.CamView
 flatpak uninstall --user io.github.henr1quess30.CamView
 ```
 
+## Codecs: a extensão ffmpeg-full
+
+O runtime traz um ffmpeg com codecs reduzidos, e **H.265 não está entre
+eles** — que é justamente o que as câmeras usam. O manifesto declara a
+extensão `org.freedesktop.Platform.ffmpeg-full`, e o `build.sh` a instala.
+
+O sintoma quando ela falta é cruel de diagnosticar: a câmera conecta, o
+app diz "reproduzindo" e o stream encerra na hora, como se o equipamento
+tivesse recusado. Medido: sem a extensão, 1 de 4 células mostrava imagem
+(a única em H.264); com ela, 4 de 4.
+
 ## Por que o PySide6 vem de um BaseApp
 
 PySide6 **não** é instalado do PyPI aqui. O Flathub publica

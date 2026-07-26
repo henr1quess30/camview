@@ -237,3 +237,18 @@ class TestTheNoticeInTheWindow:
         QApplication.processEvents()
 
         assert received and isinstance(received[0], Release)
+
+
+class TestVersionConsistency:
+    def test_the_package_version_matches_pyproject(self) -> None:
+        """The update check compares against __version__: if it lags behind
+        the released version, every user is told to update forever."""
+        import tomllib
+        from pathlib import Path
+
+        from camview import _FALLBACK_VERSION
+
+        pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+        declared = tomllib.loads(pyproject.read_text())["project"]["version"]
+
+        assert _FALLBACK_VERSION == declared

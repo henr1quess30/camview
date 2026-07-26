@@ -75,6 +75,26 @@ delas óbvia na documentação:
    um diretório por biblioteca, então os quatro precisam entrar em
    `cppflags`.
 
+6. **`--prefer-wheels=cryptography,cffi`**: o gerador escolhia os
+   *sdists* desses dois, que exigem Rust e maturin — ausentes no SDK.
+   Ambos publicam wheels abi3.
+7. **O CamView é instalado por cópia, não por pip.** Sendo Python puro em
+   layout `src/`, o pip só acrescentaria a dependência do backend de
+   build (hatchling), que ele teria de baixar de uma rede que a sandbox
+   não tem. Um launcher de três linhas substitui o console script.
+8. **A extensão `ffmpeg-full` é obrigatória.** O runtime traz ffmpeg com
+   codecs reduzidos e **sem H.265**. O sintoma é enganoso: a câmera
+   conecta, o app diz "reproduzindo" e o stream encerra na hora, como se
+   o equipamento tivesse recusado. Medido: sem a extensão, 1 de 4 células
+   com imagem (a única H.264); com ela, 4 de 4.
+
+**Bug real encontrado ao testar o pacote:** `__version__` no
+`camview/__init__.py` ainda dizia 0.1.0 enquanto o `pyproject.toml` já
+estava em 0.2.0. Como o aviso de atualização compara contra
+`__version__`, todo usuário seria avisado de uma "versão nova" para
+sempre. Agora a versão vem dos metadados do pacote quando existem, com um
+literal de reserva mantido em dia por teste.
+
 Também: o Flatpak tem banco próprio, então quem já usava o app começaria
 sem nenhum NVR — daí o `migrate-data.sh`. As senhas não precisam de
 migração, já que ficam no keyring do sistema, acessado pelo portal.
