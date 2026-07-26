@@ -18,6 +18,7 @@ from camview.services.hikvision import (
     channel_online_status,
     discover_channels,
 )
+from camview.services.updates import find_update
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,25 @@ class ChannelDiscoveryWorker(QThread):
             self.failed.emit(str(exc))
         else:
             self.succeeded.emit(channels)
+
+
+class UpdateCheckWorker(QThread):
+    """Looks for a newer release without holding up the window."""
+
+    #: ``object`` so ``None`` (no update) crosses the thread unchanged.
+    finished_with = Signal(object)
+
+    def __init__(self, current_version: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._current_version = current_version
+
+    def run(self) -> None:
+        try:
+            release = find_update(self._current_version)
+        except Exception as exc:  # noqa: BLE001 - never break startup over this
+            logger.info("Update check failed: %s", exc)
+            release = None
+        self.finished_with.emit(release)
 
 
 class ChannelStatusWorker(QThread):

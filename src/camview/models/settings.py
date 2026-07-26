@@ -60,6 +60,8 @@ class AppSettings:
     restore_last_layout: bool = True
     #: The clock/CPU/memory/bandwidth card above the device list.
     show_status_panel: bool = True
+    #: Ask GitHub once per run whether a newer version was published.
+    check_for_updates: bool = True
     #: ``None`` means "wherever config.get_default_log_dir() points".
     log_dir: Path | None = None
 
@@ -153,6 +155,9 @@ def settings_from_mapping(stored: dict[str, str]) -> AppSettings:
         ),
         show_status_panel=_to_bool(
             raw("show_status_panel") or "", defaults.show_status_panel
+        ),
+        check_for_updates=_to_bool(
+            raw("check_for_updates") or "", defaults.check_for_updates
         ),
         log_dir=Path(log_dir_raw) if log_dir_raw else None,
         shortcut_next_camera=_to_shortcut(

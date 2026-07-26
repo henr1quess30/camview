@@ -6,6 +6,16 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
 ### Adicionado
 
+- **Aviso de versão nova**: o CamView consulta uma vez por execução as
+  releases publicadas no GitHub e, se houver versão mais recente, mostra
+  um link discreto na barra inferior. Nada é baixado nem instalado
+  sozinho — atualizar continua sendo do Flatpak/AUR/gerenciador. Pode
+  ser desligado em Configurações → Ao abrir.
+- **Empacotamento Flatpak** (`packaging/flatpak/`): manifesto, metadados
+  AppStream, ícone e script de build. O manifesto compila live555 e o
+  VLC 3.0.23, porque o runtime não traz VLC e libvlc sem plugins não
+  reproduz RTSP.
+
 - **"Atualizar canais e nomes"** no menu de contexto do dispositivo: uma
   consulta ao equipamento que cria os canais que faltam e **adota os
   nomes reais das câmeras**. Antes a descoberta só criava canais novos e

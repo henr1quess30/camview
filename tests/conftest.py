@@ -89,6 +89,10 @@ def no_device_queries(monkeypatch: pytest.MonkeyPatch) -> None:
         "camview.ui.workers.channel_online_status",
         lambda *_args, **_kwargs: {},
     )
+    # Same for the update check, which every window fires on startup.
+    monkeypatch.setattr(
+        "camview.ui.workers.find_update", lambda *_args, **_kwargs: None
+    )
 
 
 @pytest.fixture

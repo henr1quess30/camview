@@ -48,6 +48,16 @@ pip install -e ".[dev]"
 python -m camview
 ```
 
+### Flatpak (qualquer distribuição)
+
+```bash
+cd packaging/flatpak && ./build.sh
+```
+
+Roda em qualquer distro e atualiza pelo `flatpak update`. Veja
+[packaging/flatpak/README.md](packaging/flatpak/README.md) — inclui o
+caminho para publicar no Flathub.
+
 ### Pacote do sistema (Arch/EndeavourOS)
 
 ```bash

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata. Required by Flathub, and what software centres
+     show. Validate with: appstreamcli validate <this file> -->
+<component type="desktop-application">
+  <id>io.github.henr1quess30.CamView</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>CamView</name>
+  <summary>Watch RTSP cameras and NVRs in a mosaic</summary>
+  <summary xml:lang="pt-BR">Câmeras e NVRs RTSP em mosaico</summary>
+
+  <description>
+    <p>
+      CamView is a lightweight live-view client for IP cameras and NVRs.
+      It shows several RTSP streams side by side and does nothing else:
+      no recording, no motion detection, no analytics, no web server.
+    </p>
+    <p xml:lang="pt-BR">
+      CamView é um cliente leve de visualização ao vivo para câmeras IP e
+      NVRs. Ele mostra vários streams RTSP lado a lado e nada além disso:
+      sem gravação, sem detecção de movimento, sem análise de imagem, sem
+      servidor web.
+    </p>
+    <ul>
+      <li>Mosaics from 1x1 to 4x4, plus arrangements with one large cell</li>
+      <li>Saved layouts, restored with the window on the next run</li>
+      <li>Automatic channel discovery on Hikvision devices (ISAPI)</li>
+      <li>Digital zoom, and stepping between cameras from the keyboard</li>
+      <li>Passwords kept in the system keyring, never in the database</li>
+    </ul>
+    <ul xml:lang="pt-BR">
+      <li>Mosaicos de 1x1 a 4x4, e formatos com uma célula destacada</li>
+      <li>Layouts salvos, restaurados junto com a janela na próxima vez</li>
+      <li>Descoberta automática de canais em equipamentos Hikvision (ISAPI)</li>
+      <li>Zoom digital e navegação entre câmeras pelo teclado</li>
+      <li>Senhas no keyring do sistema, nunca no banco de dados</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">io.github.henr1quess30.CamView.desktop</launchable>
+  <url type="homepage">https://github.com/henr1quess30/camview</url>
+  <url type="bugtracker">https://github.com/henr1quess30/camview/issues</url>
+
+  <developer id="io.github.henr1quess30">
+    <name>henr1quess30</name>
+  </developer>
+
+  <content_rating type="oars-1.1"/>
+
+  <!-- Flathub requires at least one screenshot. Add the URL of an image
+       committed to the repository (or hosted anywhere stable) before
+       submitting; a screenshot of a live wall will contain real camera
+       footage, so use a demo source. -->
+  <screenshots>
+    <screenshot type="default">
+      <caption>A mosaic of live cameras</caption>
+      <image>https://raw.githubusercontent.com/henr1quess30/camview/master/docs/screenshot-mosaic.png</image>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="0.2.0" date="2026-07-26">
+      <description>
+        <p>Digital zoom, camera stepping, configurable shortcuts, standalone
+        cameras, and channels with no signal are no longer retried endlessly.</p>
+      </description>
+    </release>
+    <release version="0.1.0" date="2026-07-25">
+      <description>
+        <p>First usable release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

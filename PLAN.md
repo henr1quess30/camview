@@ -24,6 +24,40 @@ validada antes de avançar para a próxima.
 - [x] Fase 10 — Testes
 - [x] Fase 11 — Empacotamento e documentação final
 
+## Distribuição e atualizações (pedido do usuário)
+
+O usuário quis distribuir para uma comunidade e perguntou sobre patente.
+
+**Sobre proteção legal** (registrado aqui porque orientou a decisão, não
+como aconselhamento jurídico): no Brasil software não se patenteia — a
+Lei da Propriedade Industrial exclui "programa de computador em si"
+(art. 10, V). O que vale é direito autoral, automático desde a criação
+pela Lei 9.609/98; registro no INPI é opcional e serve como prova de
+autoria. Para distribuir, o que importa é a licença, e o projeto já é
+MIT.
+
+**AppImage foi descartada** por uma razão medida, não por preferência:
+esta máquina tem glibc 2.43 e não tem container. Uma AppImage construída
+aqui exigiria glibc ≥ 2.43 no destino, falhando em Ubuntu 24.04 (2.39) e
+Debian 12 (2.36) — ou seja, quase todo mundo. AppImage precisa ser
+construída na distro mais antiga que se pretende suportar.
+
+**Flatpak** resolve compatibilidade e atualização de uma vez. O manifesto
+(`packaging/flatpak/`) compila **live555** e o **VLC 3.0.23**, porque o
+runtime não traz VLC e — de novo — libvlc sem plugins não reproduz RTSP.
+Os checksums foram baixados dos servidores do VideoLAN, não escritos de
+memória. O live555 vem do mirror do VideoLAN porque o site oficial
+substitui o tarball no lugar, o que quebraria o checksum.
+
+Permissões deliberadamente enxutas: rede, X11 (exigência do libVLC),
+`dri` e o serviço de segredos para o keyring. Sem acesso à pasta pessoal.
+
+**Aviso de atualização** (`services/updates.py`): consulta a API pública
+do GitHub e mostra um link na barra inferior. Só verifica — baixar e
+instalar é do gerenciador, que faz isso melhor e é em quem o usuário
+confia. Falha de rede, repositório privado (404) e tag ilegível são
+todos silêncio, nunca erro na cara do usuário.
+
 ## Adoção dos nomes de câmera do equipamento (pedido do usuário)
 
 Ao ver a tela do usuário, dava para notar dezenas de "Camera 01" e

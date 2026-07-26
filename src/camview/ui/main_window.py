@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from camview import __version__
 from camview.database.repositories import (
     CameraRepository,
     LayoutRepository,
@@ -58,6 +59,7 @@ from camview.services.settings import (
     playback_options_for,
     save_settings,
 )
+from camview.services.updates import Release
 from camview.services.stream_manager import (
     VlcUnavailableError,
     bytes_received,
@@ -72,6 +74,7 @@ from camview.ui.workers import (
     STATUS_QUERY_TIMEOUT_S,
     ChannelDiscoveryWorker,
     ChannelStatusWorker,
+    UpdateCheckWorker,
 )
 from camview.ui.widgets.grid_shapes import (
     GRID_SHAPES,
@@ -159,6 +162,7 @@ class MainWindow(QMainWindow):
         self._status_workers: set[ChannelStatusWorker] = set()
         #: Ownership for the on-demand "ask the device" queries.
         self._sync_workers: set[ChannelDiscoveryWorker] = set()
+        self._update_workers: set[UpdateCheckWorker] = set()
 
         self._build_sidebar()
         self._build_central_widget()
@@ -167,6 +171,7 @@ class MainWindow(QMainWindow):
         self._build_shortcuts()
         self._build_statusbar()
         self._restore_session()
+        self._check_for_updates()
 
         logger.debug("MainWindow constructed")
 
@@ -318,6 +323,14 @@ class MainWindow(QMainWindow):
         # showMessage() texts, so the count is always readable.
         self.cell_count_label = QLabel()
         self.cell_count_label.setStyleSheet("color: palette(mid); margin-right: 6px;")
+        # Only appears when there is something to say, and links straight
+        # to the release page — the app never installs anything itself.
+        self.update_label = QLabel()
+        self.update_label.setOpenExternalLinks(True)
+        self.update_label.setVisible(False)
+        self.update_label.setStyleSheet("margin-right: 12px;")
+        self.statusBar().addPermanentWidget(self.update_label)
+
         self.statusBar().addPermanentWidget(self.cell_count_label)
         # Connected here, not in _build_central_widget: the grid emits while
         # rebuilding, and the label it updates must already exist.
@@ -348,6 +361,33 @@ class MainWindow(QMainWindow):
 
         self.status_panel.apply_streams(playing, len(tiles), rate)
 
+    # ------------------------------------------------------------------
+    # Update notice
+    # ------------------------------------------------------------------
+
+    def _check_for_updates(self) -> None:
+        """Ask GitHub whether a newer version was published.
+
+        Off the GUI thread, once per run, and only if the user left it
+        on. Nothing is downloaded or installed — the notice is a link.
+        """
+        if not self._settings.check_for_updates:
+            return
+        worker = UpdateCheckWorker(__version__, parent=self)
+        worker.finished_with.connect(self._on_update_check_finished)
+        worker.finished.connect(lambda: self._update_workers.discard(worker))
+        self._update_workers.add(worker)
+        worker.start()
+
+    def _on_update_check_finished(self, release: object) -> None:
+        if not isinstance(release, Release):
+            return  # Up to date, or the check simply did not land.
+        self.update_label.setText(
+            f'<a href="{release.url}" style="text-decoration:none">'
+            f"Nova versão {release.version} disponível</a>"
+        )
+        self.update_label.setVisible(True)
+
     def _update_cell_count(self) -> None:
         used = len(self.video_grid.tiles())
         total = self.video_grid.cell_count
@@ -357,7 +397,11 @@ class MainWindow(QMainWindow):
         self._save_session()
         # A QThread destroyed while still running aborts the process, so
         # give the status queries their (short) budget to come back.
-        for worker in (*self._status_workers, *self._sync_workers):
+        for worker in (
+            *self._status_workers,
+            *self._sync_workers,
+            *self._update_workers,
+        ):
             worker.wait(int(STATUS_QUERY_TIMEOUT_S * 1000) + 1000)
         # Release every libVLC player before the widgets are torn down.
         self.video_grid.clear()

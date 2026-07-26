@@ -118,6 +118,12 @@ class SettingsDialog(QDialog):
             "Mostrar o painel de status (relógio, CPU, memória, rede)"
         )
         startup_form.addRow("", self.status_panel_check)
+        self.update_check = QCheckBox("Avisar quando houver uma versão nova")
+        self.update_check.setToolTip(
+            "Consulta as releases publicadas no GitHub. Nada é baixado nem "
+            "instalado automaticamente."
+        )
+        startup_form.addRow("", self.update_check)
         root.addWidget(startup)
 
         shortcuts = QGroupBox("Atalhos de teclado")
@@ -191,6 +197,7 @@ class SettingsDialog(QDialog):
         self.maximized_check.setChecked(settings.start_maximized)
         self.restore_layout_check.setChecked(settings.restore_last_layout)
         self.status_panel_check.setChecked(settings.show_status_panel)
+        self.update_check.setChecked(settings.check_for_updates)
         self.log_dir_edit.setText("" if settings.log_dir is None else str(settings.log_dir))
         for field, edit in self.shortcut_edits.items():
             edit.setKeySequence(QKeySequence(getattr(settings, field)))
@@ -218,5 +225,6 @@ class SettingsDialog(QDialog):
             start_maximized=self.maximized_check.isChecked(),
             restore_last_layout=self.restore_layout_check.isChecked(),
             show_status_panel=self.status_panel_check.isChecked(),
+            check_for_updates=self.update_check.isChecked(),
             log_dir=Path(log_dir) if log_dir else None,
         )

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=CamView
+GenericName=Visualizador de Câmeras
+Comment=Visualização ao vivo de câmeras e NVRs em mosaico
+Exec=camview
+Icon=io.github.henr1quess30.CamView
+Terminal=false
+Categories=AudioVideo;Video;Player;
+Keywords=camera;nvr;rtsp;cftv;video;vigilancia;hikvision;
+StartupNotify=true
+StartupWMClass=camview
