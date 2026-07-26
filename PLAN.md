@@ -24,6 +24,36 @@ validada antes de avançar para a próxima.
 - [x] Fase 10 — Testes
 - [x] Fase 11 — Empacotamento e documentação final
 
+## Painel de status (pedido do usuário, inspirado no Shinobi)
+
+O usuário gosta do cartão de uso do Shinobi. Adaptado ao que este app
+pode responder com honestidade:
+
+| Shinobi | CamView |
+|---------|---------|
+| Relógio e data | igual |
+| CPU do sistema | CPU **do processo**, como fração da máquina — é o que dá para comparar com o monitor do sistema |
+| RAM | memória residente do processo |
+| Disco primário/secundário | **omitido**: não há gravação, não haveria o que medir |
+| Monitores ativos (9/12) | câmeras **reproduzindo** / abertas |
+| — | banda consumida pelos streams |
+
+- **Sem dependência nova:** CPU e memória saem de `/proc/self/stat`,
+  `/proc/self/status` e `/proc/meminfo`. O parser de `stat` localiza os
+  campos a partir do último `)`, porque o nome do processo fica entre
+  parênteses e pode conter espaços.
+- **CPU é taxa**, então a primeira amostra só estabelece a linha de base
+  e reporta 0%.
+- **Banda vem do `demux_read_bytes` do libVLC**, não do `read_bytes`:
+  medido contra NVR real, `read_bytes` fica sempre em zero no RTSP,
+  enquanto o contador do demux acompanha o tráfego de verdade. Contador
+  que anda para trás (stream reiniciou) reporta zero em vez de negativo.
+- **Sem barra para a banda**: não existe teto honesto para preencher.
+
+Validado ao vivo com 16 células abertas: painel mostrou CPU 12%, memória
+486 MiB, câmeras 15/16 e 227 KiB/s; o `ps` no mesmo instante confirmou
+106% de um núcleo (≈13% de 8) e RSS de 486 MiB.
+
 ## 0.2.0 — zoom refeito (relato do usuário: "o zoom não ficou legal")
 
 Dois sintomas relatados: **ampliava no lugar errado** e **saía esticado

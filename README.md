@@ -162,6 +162,10 @@ Como usar hoje:
 - O cabeçalho de cada célula mostra **SUB** ou **PRINCIPAL**, indicando qual
   stream está em uso, e a barra inferior mostra quantas células estão
   ocupadas.
+- No topo da lista lateral, um **painel de status** com relógio, uso de CPU
+  e memória do CamView, quantas câmeras estão realmente reproduzindo e
+  quanta banda os streams estão consumindo. Pode ser desligado em
+  Configurações → Ao abrir.
 - **Roda do mouse** sobre uma câmera dá zoom digital, aproximando o ponto
   sob o cursor (até 8x). Com a imagem ampliada, **arraste com o botão
   esquerdo para mover a imagem**; `0` volta ao normal (e aí arrastar

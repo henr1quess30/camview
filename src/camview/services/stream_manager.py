@@ -88,6 +88,39 @@ def reset_vlc_instance() -> None:
         _instance = None
 
 
+def _read_media_stat(player: object, field: str) -> int | None:
+    """One counter from libVLC's per-media statistics, or ``None``.
+
+    Never raises: these are diagnostics, and a missing counter must read
+    as "unknown" rather than interrupt playback.
+    """
+    try:
+        import ctypes
+
+        import vlc
+
+        media = player.get_media()  # type: ignore[attr-defined]
+        if media is None:
+            return None
+        stats = vlc.MediaStats()
+        if not vlc.libvlc_media_get_stats(media, ctypes.byref(stats)):
+            return None
+        return int(getattr(stats, field))
+    except Exception:  # noqa: BLE001 - diagnostics must never break playback
+        logger.debug("Could not read media stat %r", field, exc_info=True)
+        return None
+
+
+def bytes_received(player: object) -> int | None:
+    """Bytes this stream has pulled from the network so far.
+
+    ``demux_read_bytes`` and not ``read_bytes``: the latter stays at zero
+    for RTSP (measured against a live NVR), while the demux counter tracks
+    the real traffic.
+    """
+    return _read_media_stat(player, "demux_read_bytes")
+
+
 def displayed_picture_count(player: object) -> int | None:
     """How many frames libVLC has put on screen for ``player`` so far.
 

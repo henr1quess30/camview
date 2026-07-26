@@ -6,6 +6,14 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
 ### Adicionado
 
+- **Painel de status na barra lateral** (inspirado no Shinobi): relógio e
+  data, uso de CPU e memória do processo, quantas câmeras estão de fato
+  reproduzindo e a banda consumida pelos streams. Sem uso de disco — o
+  CamView não grava nada, então não teria o que mostrar ali. Os números
+  de CPU/memória vêm direto do `/proc` (sem dependência nova) e a banda
+  vem dos contadores do próprio libVLC. Pode ser desligado em
+  Configurações → Ao abrir.
+
 - **Novo layout em branco** (`Ctrl+N`, menu Layouts e botão no gerenciador
   de layouts): fecha todas as câmeras e deixa o mosaico vazio para montar
   uma composição do zero, mantendo a grade escolhida. Pergunta antes

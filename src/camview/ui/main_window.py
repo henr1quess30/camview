@@ -14,7 +14,7 @@ import sqlite3
 from functools import partial
 from time import monotonic
 
-from PySide6.QtCore import QByteArray, QSignalBlocker, Qt, QThread, Signal
+from PySide6.QtCore import QByteArray, QSignalBlocker, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QCloseEvent, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QComboBox,
@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QToolBar,
     QTreeWidgetItem,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -53,11 +54,16 @@ from camview.services.settings import (
     playback_options_for,
     save_settings,
 )
-from camview.services.stream_manager import VlcUnavailableError, get_vlc_instance
+from camview.services.stream_manager import (
+    VlcUnavailableError,
+    bytes_received,
+    get_vlc_instance,
+)
 from camview.ui.dialogs.layout_dialog import LayoutManagerDialog
 from camview.ui.dialogs.nvr_dialog import NvrDialog
 from camview.ui.dialogs.settings_dialog import SettingsDialog
 from camview.ui.widgets.device_tree import CAMERA_ID_ROLE, NVR_ID_ROLE, DeviceTree
+from camview.ui.widgets.status_panel import STATS_INTERVAL_MS, StatusPanel
 from camview.ui.widgets.video_grid import GRID_SHAPES, VideoGrid, smallest_shape_for
 from camview.ui.widgets.video_tile import ZOOM_STEP, ConnectionStatus, VideoTile
 
@@ -194,9 +200,27 @@ class MainWindow(QMainWindow):
             self._on_device_tree_item_double_clicked
         )
 
+        self.status_panel = StatusPanel()
+        self.status_panel.setVisible(self._settings.show_status_panel)
+
+        sidebar = QWidget()
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(4, 4, 4, 4)
+        sidebar_layout.setSpacing(6)
+        sidebar_layout.addWidget(self.status_panel)
+        sidebar_layout.addWidget(self.device_tree, stretch=1)
+
+        # Traffic is a rate, so it needs two readings; the panel is fed on
+        # the same beat it refreshes the machine figures on.
+        self._stream_bytes: int = 0
+        self._stream_sampled_at: float = monotonic()
+        self._stream_timer = QTimer(self)
+        self._stream_timer.timeout.connect(self._refresh_stream_stats)
+        self._stream_timer.start(STATS_INTERVAL_MS)
+
         dock = QDockWidget("Devices", self)
         dock.setObjectName("devicesDock")
-        dock.setWidget(self.device_tree)
+        dock.setWidget(sidebar)
         dock.setFeatures(
             QDockWidget.DockWidgetFeature.DockWidgetMovable
             | QDockWidget.DockWidgetFeature.DockWidgetFloatable
@@ -322,6 +346,29 @@ class MainWindow(QMainWindow):
         self._update_cell_count()
         self.statusBar().showMessage("Pronto")
 
+    def _refresh_stream_stats(self) -> None:
+        """Feed the status panel: cameras actually playing, and traffic."""
+        tiles = self.video_grid.tiles().values()
+        playing = sum(
+            1 for tile in tiles if tile.status is ConnectionStatus.PLAYING
+        )
+        total_bytes = 0
+        for tile in tiles:
+            received = bytes_received(tile._player) if tile._player else None
+            if received is not None:
+                total_bytes += received
+
+        now = monotonic()
+        elapsed = now - self._stream_sampled_at
+        # A counter that went backwards means a stream restarted; report
+        # nothing rather than a negative rate.
+        delta = total_bytes - self._stream_bytes
+        rate = delta / elapsed if elapsed > 0 and delta >= 0 else 0.0
+        self._stream_bytes = total_bytes
+        self._stream_sampled_at = now
+
+        self.status_panel.apply_streams(playing, len(tiles), rate)
+
     def _update_cell_count(self) -> None:
         used = len(self.video_grid.tiles())
         total = self.video_grid.cell_count
@@ -356,6 +403,7 @@ class MainWindow(QMainWindow):
 
         self._settings = updated
         self._build_shortcuts()
+        self.status_panel.setVisible(updated.show_status_panel)
         # Playback settings reach libVLC through media options, which are
         # read when a stream starts — so they apply to cells opened or
         # reconnected from now on, not to the ones already running.

@@ -58,6 +58,8 @@ class AppSettings:
     mosaic_stream: MosaicStream = MosaicStream.SUB
     start_maximized: bool = False
     restore_last_layout: bool = True
+    #: The clock/CPU/memory/bandwidth card above the device list.
+    show_status_panel: bool = True
     #: ``None`` means "wherever config.get_default_log_dir() points".
     log_dir: Path | None = None
 
@@ -148,6 +150,9 @@ def settings_from_mapping(stored: dict[str, str]) -> AppSettings:
         ),
         restore_last_layout=_to_bool(
             raw("restore_last_layout") or "", defaults.restore_last_layout
+        ),
+        show_status_panel=_to_bool(
+            raw("show_status_panel") or "", defaults.show_status_panel
         ),
         log_dir=Path(log_dir_raw) if log_dir_raw else None,
         shortcut_next_camera=_to_shortcut(

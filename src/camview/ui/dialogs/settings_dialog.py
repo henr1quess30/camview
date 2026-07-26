@@ -114,6 +114,10 @@ class SettingsDialog(QDialog):
         startup_form.addRow("", self.maximized_check)
         self.restore_layout_check = QCheckBox("Reabrir o último layout")
         startup_form.addRow("", self.restore_layout_check)
+        self.status_panel_check = QCheckBox(
+            "Mostrar o painel de status (relógio, CPU, memória, rede)"
+        )
+        startup_form.addRow("", self.status_panel_check)
         root.addWidget(startup)
 
         shortcuts = QGroupBox("Atalhos de teclado")
@@ -186,6 +190,7 @@ class SettingsDialog(QDialog):
         self.max_delay_spin.setValue(settings.max_reconnect_delay_s)
         self.maximized_check.setChecked(settings.start_maximized)
         self.restore_layout_check.setChecked(settings.restore_last_layout)
+        self.status_panel_check.setChecked(settings.show_status_panel)
         self.log_dir_edit.setText("" if settings.log_dir is None else str(settings.log_dir))
         for field, edit in self.shortcut_edits.items():
             edit.setKeySequence(QKeySequence(getattr(settings, field)))
@@ -212,5 +217,6 @@ class SettingsDialog(QDialog):
             mosaic_stream=MosaicStream(self.mosaic_stream_combo.currentData()),
             start_maximized=self.maximized_check.isChecked(),
             restore_last_layout=self.restore_layout_check.isChecked(),
+            show_status_panel=self.status_panel_check.isChecked(),
             log_dir=Path(log_dir) if log_dir else None,
         )
