@@ -8,39 +8,50 @@ servidor web).
 
 Testado em EndeavourOS/Arch Linux com KDE Plasma.
 
-## Requisitos de sistema (EndeavourOS / Arch Linux)
+## Instalação
+
+### Recomendado: Flatpak (qualquer distribuição)
+
+Traz tudo junto — inclusive o VLC e os codecs. Você não precisa instalar
+dependência nenhuma à mão.
+
+1. Baixe o `CamView.flatpak` e o `install-flatpak.sh` da
+   [página de releases](https://github.com/henr1quess30/camview/releases).
+2. Rode:
 
 ```bash
-sudo pacman -S python python-pip vlc
+chmod +x install-flatpak.sh
+./install-flatpak.sh CamView.flatpak
 ```
 
-Notas sobre essas dependências, confirmadas em ambiente real:
+O script instala o runtime, os codecs e o aplicativo, e ao final o CamView
+aparece no menu. A primeira execução baixa alguns GB de runtime; as
+seguintes são instantâneas.
 
-- **Instale o pacote `vlc` completo, não apenas `libvlc`.** No Arch, o
-  `libvlc` sozinho **não reproduz RTSP** — os plugins essenciais são
-  pacotes separados. Se você só tem `libvlc`, precisa no mínimo de:
-
-  ```bash
-  sudo pacman -S vlc-plugin-live555 vlc-plugin-ffmpeg vlc-plugins-video-output
-  ```
-
-  - `vlc-plugin-live555` — transporte RTSP. Sem ele o VLC tenta os
-    módulos `satip`/`realrtsp` e a conexão falha sempre.
-  - `vlc-plugin-ffmpeg` — decodificação H.264/H.265.
-  - `vlc-plugins-video-output` — os módulos de saída de vídeo. Sem ele
-    não há nenhuma saída disponível.
-
-  Instalar `vlc` resolve tudo de uma vez e é o caminho recomendado.
-- O pacote `python` do Arch **não inclui pip/ensurepip**. `python -m venv`
-  funciona sem `python-pip`, mas o `pip` dentro do venv não bootstrap
-  sozinho — por isso `python-pip` precisa estar instalado no sistema antes
-  do passo `pip install -e ".[dev]"` abaixo, mesmo que a instalação em si
-  aconteça dentro do ambiente virtual.
-
-## Instalação e execução
+Se preferir fazer à mão:
 
 ```bash
-git clone <repo> camview
+flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --user flathub org.kde.Platform//6.9 org.freedesktop.Platform.ffmpeg-full//24.08
+flatpak install --user --bundle CamView.flatpak
+flatpak run io.github.henr1quess30.CamView
+```
+
+> **Só falta o `flatpak`?** `sudo pacman -S flatpak` (Arch/EndeavourOS),
+> `sudo apt install flatpak` (Ubuntu/Mint/Debian). No Fedora já vem.
+
+### Arch/EndeavourOS pelo PKGBUILD
+
+```bash
+git clone https://github.com/henr1quess30/camview.git
+cd camview/packaging && makepkg -si
+```
+
+### A partir do código (para desenvolver)
+
+```bash
+sudo pacman -S python python-pip vlc     # ou o equivalente na sua distro
+git clone https://github.com/henr1quess30/camview.git
 cd camview
 python -m venv .venv
 source .venv/bin/activate
@@ -48,25 +59,22 @@ pip install -e ".[dev]"
 python -m camview
 ```
 
-### Flatpak (qualquer distribuição)
+**Atenção nesta rota:** instale o pacote `vlc` completo, não apenas o
+`libvlc`. No Arch o `libvlc` sozinho **não reproduz RTSP** — o transporte
+(`vlc-plugin-live555`), os decodificadores (`vlc-plugin-ffmpeg`) e as
+saídas de vídeo (`vlc-plugins-video-output`) são pacotes separados.
+Instalar `vlc` resolve os três de uma vez. O Flatpak acima não tem esse
+problema porque já embute tudo.
+
+## Construir o próprio Flatpak
 
 ```bash
-cd packaging/flatpak && ./build.sh
+cd packaging/flatpak && ./build.sh            # instala para o seu usuário
+cd packaging/flatpak && ./build.sh --bundle   # e gera CamView.flatpak
 ```
 
-Roda em qualquer distro e atualiza pelo `flatpak update`. Veja
-[packaging/flatpak/README.md](packaging/flatpak/README.md) — inclui o
-caminho para publicar no Flathub.
-
-### Pacote do sistema (Arch/EndeavourOS)
-
-```bash
-cd packaging && makepkg -si
-```
-
-Veja [packaging/README.md](packaging/README.md) — inclui também o
-esqueleto de AppImage e por que o empacotamento do libVLC exige cuidado
-com o caminho dos plugins.
+Veja [packaging/flatpak/README.md](packaging/flatpak/README.md) — explica
+por que o manifesto compila o VLC e como publicar no Flathub.
 
 ### Atalho no menu do KDE
 
