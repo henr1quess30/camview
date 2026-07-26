@@ -219,13 +219,13 @@ class TestStatusWorkerSignal:
         QVariantMap, which only accepts string keys — channel numbers are
         ints, so the mapping arrived empty on the GUI side and nothing was
         ever parked. Declared as ``object`` now."""
-        from camview.ui import main_window as mw
+        from camview.ui import workers
 
         monkeypatch.setattr(
-            mw, "channel_online_status", lambda *a, **k: {1: True, 12: False}
+            workers, "channel_online_status", lambda *a, **k: {1: True, 12: False}
         )
         received: list[dict[int, bool]] = []
-        worker = mw._ChannelStatusWorker(3, "192.0.2.10", "admin", TEST_PASSWORD)
+        worker = workers.ChannelStatusWorker(3, "192.0.2.10", "admin", TEST_PASSWORD)
         worker.finished_with.connect(lambda _id, status: received.append(status))
 
         worker.start()
@@ -237,14 +237,14 @@ class TestStatusWorkerSignal:
     def test_a_failing_query_reports_no_information(
         self, qapp: QApplication, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from camview.ui import main_window as mw
+        from camview.ui import workers
 
         def explode(*_args: object, **_kwargs: object) -> dict[int, bool]:
             raise RuntimeError("rede caiu")
 
-        monkeypatch.setattr(mw, "channel_online_status", explode)
+        monkeypatch.setattr(workers, "channel_online_status", explode)
         received: list[dict[int, bool]] = []
-        worker = mw._ChannelStatusWorker(3, "192.0.2.10", "admin", TEST_PASSWORD)
+        worker = workers.ChannelStatusWorker(3, "192.0.2.10", "admin", TEST_PASSWORD)
         worker.finished_with.connect(lambda _id, status: received.append(status))
 
         worker.start()
@@ -272,10 +272,12 @@ class TestParkingDeadChannels:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         asked: list[str] = []
-        from camview.ui import main_window as mw
+        from camview.ui import workers as workers_module
 
         monkeypatch.setattr(
-            mw, "channel_online_status", lambda host, *a, **k: asked.append(host) or {}
+            workers_module,
+            "channel_online_status",
+            lambda host, *a, **k: asked.append(host) or {},
         )
         self._failing_window(window, fake_instance)
 

@@ -152,6 +152,11 @@ Como usar hoje:
   **abre direto em tela cheia**.
 - **Duplo clique no NVR** abre **todos os canais dele de uma vez**, ajustando
   a grade automaticamente ao número de câmeras (4 canais → 2x2, 16 → 4x4).
+- **Botão direito num dispositivo → "Atualizar canais e nomes"** pergunta ao
+  equipamento quais canais existem e como as câmeras se chamam, criando o
+  que falta e adotando os nomes de lá. Nomes genéricos ("Canal 7") são
+  substituídos pelos reais; um nome de verdade nunca é rebaixado a
+  genérico.
 - **Duplo clique** numa câmera da árvore lateral abre o stream na primeira
   célula livre; ou **arraste** a câmera para uma célula específica.
 - **Arraste** uma célula sobre outra para trocá-las de posição.

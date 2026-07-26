@@ -14,7 +14,7 @@ import sqlite3
 from functools import partial
 from time import monotonic
 
-from PySide6.QtCore import QByteArray, QSignalBlocker, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QByteArray, QSignalBlocker, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QComboBox,
@@ -47,8 +47,12 @@ from camview.services.credentials import (
     get_nvr_password,
     set_nvr_password,
 )
-from camview.services.hikvision import DiscoveredChannel, channel_online_status
-from camview.services.rtsp import build_channel_url, generate_missing_channel_cameras
+from camview.services.hikvision import DiscoveredChannel
+from camview.services.rtsp import (
+    build_channel_url,
+    camera_names_to_update,
+    generate_missing_channel_cameras,
+)
 from camview.services.settings import (
     load_settings,
     playback_options_for,
@@ -64,6 +68,11 @@ from camview.ui.dialogs.nvr_dialog import NvrDialog
 from camview.ui.dialogs.settings_dialog import SettingsDialog
 from camview.ui.widgets.device_tree import CAMERA_ID_ROLE, NVR_ID_ROLE, DeviceTree
 from camview.ui.widgets.status_panel import STATS_INTERVAL_MS, StatusPanel
+from camview.ui.workers import (
+    STATUS_QUERY_TIMEOUT_S,
+    ChannelDiscoveryWorker,
+    ChannelStatusWorker,
+)
 from camview.ui.widgets.grid_shapes import (
     GRID_SHAPES,
     GridShape,
@@ -86,44 +95,6 @@ SETTING_LAST_LAYOUT_ID = "mosaic/last_layout_id"
 
 #: Minimum gap between "is this channel online?" queries to one device.
 STATUS_QUERY_INTERVAL_S = 120.0
-#: Budget for one such query; also how long closing waits for it.
-STATUS_QUERY_TIMEOUT_S = 2.5
-
-
-class _ChannelStatusWorker(QThread):
-    """Asks a recorder which of its channels are online, off the GUI thread."""
-
-    #: ``object``, not ``dict``: a ``dict`` signal argument is marshalled as
-    #: a QVariantMap, which only takes string keys — channel numbers are
-    #: ints, so the mapping arrived empty on the other side of the thread.
-    finished_with = Signal(int, object)
-
-    def __init__(
-        self,
-        nvr_id: int,
-        host: str,
-        username: str,
-        password: str,
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
-        self._nvr_id = nvr_id
-        self._host = host
-        self._username = username
-        self._password = password
-
-    def run(self) -> None:
-        try:
-            status = channel_online_status(
-                self._host,
-                self._username,
-                self._password,
-                timeout=STATUS_QUERY_TIMEOUT_S,
-            )
-        except Exception as exc:  # noqa: BLE001 - a diagnostic must not crash
-            logger.warning("Channel status query failed for %s: %s", self._host, exc)
-            status = {}
-        self.finished_with.emit(self._nvr_id, status)
 
 
 def _icon(*names: str) -> QIcon:
@@ -185,7 +156,9 @@ class MainWindow(QMainWindow):
         self._vlc_available = True
         #: Throttling and ownership for the channel-status queries.
         self._status_checked_at: dict[int, float] = {}
-        self._status_workers: set[_ChannelStatusWorker] = set()
+        self._status_workers: set[ChannelStatusWorker] = set()
+        #: Ownership for the on-demand "ask the device" queries.
+        self._sync_workers: set[ChannelDiscoveryWorker] = set()
 
         self._build_sidebar()
         self._build_central_widget()
@@ -384,7 +357,7 @@ class MainWindow(QMainWindow):
         self._save_session()
         # A QThread destroyed while still running aborts the process, so
         # give the status queries their (short) budget to come back.
-        for worker in list(self._status_workers):
+        for worker in (*self._status_workers, *self._sync_workers):
             worker.wait(int(STATUS_QUERY_TIMEOUT_S * 1000) + 1000)
         # Release every libVLC player before the widgets are torn down.
         self.video_grid.clear()
@@ -536,15 +509,30 @@ class MainWindow(QMainWindow):
             return  # Only top-level (NVR) items have a context menu for now.
 
         nvr_id = item.data(0, NVR_ID_ROLE)
+        menu = self.build_device_context_menu(nvr_id)
+        menu.exec(self.device_tree.viewport().mapToGlobal(position))  # type: ignore[arg-type]
 
+    def build_device_context_menu(self, nvr_id: int) -> QMenu:
+        """What right-clicking a device offers.
+
+        Built separately from showing it, so its contents can be checked
+        without opening a modal — which would hang a test run.
+        """
         menu = QMenu(self)
-        edit_action = menu.addAction("Editar...")
-        remove_action = menu.addAction("Remover")
-        chosen = menu.exec(self.device_tree.viewport().mapToGlobal(position))  # type: ignore[arg-type]
-        if chosen is edit_action:
-            self._edit_nvr(nvr_id)
-        elif chosen is remove_action:
-            self._remove_nvr(nvr_id)
+
+        edit_action = menu.addAction(_icon("document-edit"), "Editar...")
+        edit_action.triggered.connect(partial(self._edit_nvr, nvr_id))
+
+        sync_action = menu.addAction(_icon("view-refresh"), "Atualizar canais e nomes")
+        sync_action.setToolTip(
+            "Pergunta ao equipamento quais canais existem e como se chamam"
+        )
+        sync_action.triggered.connect(partial(self._sync_device, nvr_id))
+
+        menu.addSeparator()
+        remove_action = menu.addAction(_icon("list-remove"), "Remover")
+        remove_action.triggered.connect(partial(self._remove_nvr, nvr_id))
+        return menu
 
     def _add_nvr(self) -> None:
         dialog = NvrDialog(parent=self)
@@ -556,7 +544,7 @@ class MainWindow(QMainWindow):
         try:
             created = self._nvr_repository.create(nvr)
             set_nvr_password(created.id, password)  # type: ignore[arg-type]
-            self._create_cameras(created, dialog.discovered_channels)
+            self._adopt_device_info(created, dialog.discovered_channels)
         except (CredentialsError, sqlite3.Error) as exc:
             logger.error("Failed to add NVR: %s", exc)
             QMessageBox.critical(self, "CamView", str(exc))
@@ -584,7 +572,7 @@ class MainWindow(QMainWindow):
         try:
             self._nvr_repository.update(updated)
             set_nvr_password(nvr_id, dialog.result_password())
-            self._create_cameras(updated, dialog.discovered_channels)
+            self._adopt_device_info(updated, dialog.discovered_channels)
         except (CredentialsError, sqlite3.Error) as exc:
             logger.error("Failed to update NVR %d: %s", nvr_id, exc)
             QMessageBox.critical(self, "CamView", str(exc))
@@ -593,10 +581,59 @@ class MainWindow(QMainWindow):
         self._refresh_device_tree()
         self.statusBar().showMessage(f"NVR '{updated.name}' atualizado.", 5000)
 
+    def _sync_device(self, nvr_id: int) -> None:
+        """Ask a device for its channels and adopt what it reports.
+
+        Off the GUI thread, because an unreachable recorder would freeze
+        the whole wall for the length of the HTTP timeout.
+        """
+        nvr = self._nvr_repository.get(nvr_id)
+        if nvr is None:
+            return
+        password = self._nvr_password_or_warn(nvr)
+        if password is None:
+            return
+
+        self.statusBar().showMessage(f"Consultando '{nvr.name}'...", 5000)
+        worker = ChannelDiscoveryWorker(
+            nvr.host, nvr.username, password, nvr_id=nvr_id, parent=self
+        )
+        worker.succeeded.connect(partial(self._on_device_synced, nvr_id))
+        worker.failed.connect(partial(self._on_device_sync_failed, nvr_id))
+        worker.finished.connect(lambda: self._sync_workers.discard(worker))
+        self._sync_workers.add(worker)
+        worker.start()
+
+    def _on_device_synced(
+        self, nvr_id: int, discovered: list[DiscoveredChannel]
+    ) -> None:
+        nvr = self._nvr_repository.get(nvr_id)
+        if nvr is None:
+            return
+        try:
+            added, renamed = self._adopt_device_info(nvr, discovered)
+        except sqlite3.Error as exc:
+            self._report_error("Não foi possível atualizar os canais", exc)
+            return
+
+        self._refresh_device_tree()
+        parts = [f"{len(discovered)} canais no equipamento"]
+        if added:
+            parts.append(f"{added} novo(s)")
+        if renamed:
+            parts.append(f"{renamed} renomeado(s)")
+        self.statusBar().showMessage(f"'{nvr.name}': " + ", ".join(parts) + ".", 8000)
+
+    def _on_device_sync_failed(self, nvr_id: int, message: str) -> None:
+        nvr = self._nvr_repository.get(nvr_id)
+        name = nvr.name if nvr else str(nvr_id)
+        logger.warning("Sync failed for '%s': %s", name, message)
+        self.statusBar().showMessage(f"'{name}': {message}", 8000)
+
     def _create_cameras(
         self, nvr: Nvr, discovered: list[DiscoveredChannel] | None
-    ) -> None:
-        """Create the camera rows this NVR is missing.
+    ) -> int:
+        """Create the camera rows this NVR is missing, and say how many.
 
         Prefers the channel list the device itself reported: real NVRs have
         gaps (a 16-slot recorder with nothing on channel 12), and they know
@@ -615,11 +652,11 @@ class MainWindow(QMainWindow):
         # device reported about channel lists does not apply to it.
         if nvr.is_camera:
             if existing:
-                return
+                return 0
             self._camera_repository.create(
                 Camera(nvr_id=nvr.id, channel_number=1, name=nvr.name)  # type: ignore[arg-type]
             )
-            return
+            return 1
 
         if discovered:
             new_cameras = [
@@ -640,6 +677,38 @@ class MainWindow(QMainWindow):
 
         for camera in new_cameras:
             self._camera_repository.create(camera)
+        return len(new_cameras)
+
+    def _adopt_device_info(
+        self, nvr: Nvr, discovered: list[DiscoveredChannel] | None
+    ) -> tuple[int, int]:
+        """Take what the device reported: new channels, then their names.
+
+        Returns ``(created, renamed)`` so the caller can say what changed.
+        """
+        created = self._create_cameras(nvr, discovered)
+        renamed = self._sync_camera_names(nvr, discovered) if discovered else 0
+        return created, renamed
+
+    def _sync_camera_names(
+        self, nvr: Nvr, discovered: list[DiscoveredChannel]
+    ) -> int:
+        """Adopt the names the device itself uses. Returns how many changed.
+
+        Only ever an upgrade: a placeholder like ``Canal 7`` is replaced
+        by the real label an operator typed into the recorder, never the
+        other way round.
+        """
+        names = {channel.channel_number: channel.name for channel in discovered}
+        cameras = self._camera_repository.list_by_nvr(nvr.id)  # type: ignore[arg-type]
+        updated = camera_names_to_update(cameras, names)
+        for camera in updated:
+            self._camera_repository.update(camera)
+        if updated:
+            logger.info(
+                "Renamed %d camera(s) of '%s' from the device", len(updated), nvr.name
+            )
+        return len(updated)
 
     def _remove_nvr(self, nvr_id: int) -> None:
         nvr = self._nvr_repository.get(nvr_id)
@@ -958,7 +1027,7 @@ class MainWindow(QMainWindow):
         if nvr is None or nvr.is_camera:
             return  # A standalone camera has no channel list to consult.
 
-        worker = _ChannelStatusWorker(nvr_id, nvr.host, nvr.username, password, self)
+        worker = ChannelStatusWorker(nvr_id, nvr.host, nvr.username, password, self)
         worker.finished_with.connect(self._on_channel_status)
         worker.finished.connect(lambda: self._status_workers.discard(worker))
         self._status_workers.add(worker)

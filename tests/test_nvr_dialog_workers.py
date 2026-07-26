@@ -12,12 +12,9 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from camview.services.hikvision import DiscoveredChannel, DiscoveryError
-from camview.ui.dialogs import nvr_dialog as dialog_module
-from camview.ui.dialogs.nvr_dialog import (
-    NvrDialog,
-    _ChannelDiscoveryWorker,
-    _ConnectionTestWorker,
-)
+from camview.ui import workers as workers_module
+from camview.ui.dialogs.nvr_dialog import NvrDialog
+from camview.ui.workers import ChannelDiscoveryWorker, ConnectionTestWorker
 
 # RFC 5737 documentation address: never a real device.
 TEST_HOST = "192.0.2.10"
@@ -28,9 +25,9 @@ class TestConnectionTestWorker:
         self, qapp: QApplication, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(
-            dialog_module, "check_tcp_connection", lambda *_a, **_k: None
+            workers_module, "check_tcp_connection", lambda *_a, **_k: None
         )
-        worker = _ConnectionTestWorker(TEST_HOST, 554)
+        worker = ConnectionTestWorker(TEST_HOST, 554)
         outcomes: list[str] = []
         worker.succeeded.connect(lambda: outcomes.append("ok"))
         worker.failed.connect(lambda msg: outcomes.append(f"fail:{msg}"))
@@ -45,8 +42,8 @@ class TestConnectionTestWorker:
         def refuse(*_args: object, **_kwargs: object) -> None:
             raise ConnectionRefusedError("Connection refused")
 
-        monkeypatch.setattr(dialog_module, "check_tcp_connection", refuse)
-        worker = _ConnectionTestWorker(TEST_HOST, 554)
+        monkeypatch.setattr(workers_module, "check_tcp_connection", refuse)
+        worker = ConnectionTestWorker(TEST_HOST, 554)
         failures: list[str] = []
         worker.failed.connect(failures.append)
 
@@ -61,9 +58,9 @@ class TestChannelDiscoveryWorker:
     ) -> None:
         found = [DiscoveredChannel(1, "Portaria"), DiscoveredChannel(3, "Copa")]
         monkeypatch.setattr(
-            dialog_module, "discover_channels", lambda *_a, **_k: found
+            workers_module, "discover_channels", lambda *_a, **_k: found
         )
-        worker = _ChannelDiscoveryWorker(TEST_HOST, "admin", "senha-falsa")
+        worker = ChannelDiscoveryWorker(TEST_HOST, "admin", "senha-falsa")
         results: list[list[DiscoveredChannel]] = []
         worker.succeeded.connect(results.append)
 
@@ -77,8 +74,8 @@ class TestChannelDiscoveryWorker:
         def fail(*_args: object, **_kwargs: object) -> None:
             raise DiscoveryError("Usuário ou senha incorretos.")
 
-        monkeypatch.setattr(dialog_module, "discover_channels", fail)
-        worker = _ChannelDiscoveryWorker(TEST_HOST, "admin", "senha-falsa")
+        monkeypatch.setattr(workers_module, "discover_channels", fail)
+        worker = ChannelDiscoveryWorker(TEST_HOST, "admin", "senha-falsa")
         failures: list[str] = []
         worker.failed.connect(failures.append)
 

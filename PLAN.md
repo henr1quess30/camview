@@ -24,6 +24,33 @@ validada antes de avançar para a próxima.
 - [x] Fase 10 — Testes
 - [x] Fase 11 — Empacotamento e documentação final
 
+## Adoção dos nomes de câmera do equipamento (pedido do usuário)
+
+Ao ver a tela do usuário, dava para notar dezenas de "Camera 01" e
+"Canal N" na lista lateral. Conferindo com os equipamentos: quatro
+gravadores tinham nomes de verdade guardados que o CamView nunca leu —
+`generate_missing_channel_cameras` só **cria** canais, e a descoberta
+nunca atualizava o nome dos que já existiam.
+
+- **`camera_names_to_update()`** decide o que trocar, e a regra é de mão
+  única: genérico vira nome real, nome real **nunca** vira genérico. Um
+  gravador que perdeu suas etiquetas não pode apagar nomes bons daqui.
+  `is_generic_camera_name()` reconhece "Canal 3", "Camera 01", "IPCamera
+  01", "Chn5" — e não confunde "Canal do Vestiario" com placeholder.
+- **"Atualizar canais e nomes" no menu de contexto** do dispositivo. A
+  descoberta existia desde a Fase 2, mas escondida em Editar → Detectar
+  canais → OK; ninguém acharia.
+- **Workers unificados** em `ui/workers.py`. Havia dois: um privado no
+  diálogo de NVR e outro na janela principal, o que já era duplicação
+  antes de precisar de um terceiro caminho.
+- **Menu construído separado de exibido** (`build_device_context_menu`),
+  pela mesma razão do menu da célula: `menu.exec()` abre um modal que
+  trava a execução dos testes.
+
+Rodado nos equipamentos do usuário: **44 câmeras renomeadas** (NVR C:
+11, NVR D: 12, NVR G: 12, NVR A: 9), com nomes como "Entrada 1", "Corredor 2", "Setor A". As 74 que seguem genéricas são
+genéricas **no próprio equipamento** — nunca foram nomeadas lá.
+
 ## Mosaicos com célula destacada (pedido do usuário)
 
 Além das grades uniformes, três arranjos onde uma câmera ganha um bloco

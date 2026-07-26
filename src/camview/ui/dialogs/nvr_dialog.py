@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import re
 
-from PySide6.QtCore import QThread, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QComboBox,
@@ -24,60 +23,13 @@ from PySide6.QtWidgets import (
 
 from camview.models.camera import StreamType
 from camview.models.nvr import DeviceType, Nvr
-from camview.services.connectivity import check_tcp_connection
-from camview.services.hikvision import (
-    DiscoveredChannel,
-    DiscoveryError,
-    discover_channels,
-)
+from camview.services.hikvision import DiscoveredChannel
+from camview.ui.workers import ChannelDiscoveryWorker, ConnectionTestWorker
 
 logger = logging.getLogger(__name__)
 
 #: Characters that mean the user pasted a URL instead of a host.
 _INVALID_HOST_CHARS = re.compile(r"[\s/:@]")
-
-
-class _ConnectionTestWorker(QThread):
-    """Runs the TCP reachability check off the GUI thread."""
-
-    succeeded = Signal()
-    failed = Signal(str)
-
-    def __init__(self, host: str, port: int, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._host = host
-        self._port = port
-
-    def run(self) -> None:
-        try:
-            check_tcp_connection(self._host, self._port)
-        except OSError as exc:
-            self.failed.emit(str(exc))
-        else:
-            self.succeeded.emit()
-
-
-class _ChannelDiscoveryWorker(QThread):
-    """Runs Hikvision ISAPI channel discovery off the GUI thread."""
-
-    succeeded = Signal(list)
-    failed = Signal(str)
-
-    def __init__(
-        self, host: str, username: str, password: str, parent: QWidget | None = None
-    ) -> None:
-        super().__init__(parent)
-        self._host = host
-        self._username = username
-        self._password = password
-
-    def run(self) -> None:
-        try:
-            channels = discover_channels(self._host, self._username, self._password)
-        except DiscoveryError as exc:
-            self.failed.emit(str(exc))
-        else:
-            self.succeeded.emit(channels)
 
 
 class NvrDialog(QDialog):
@@ -98,8 +50,8 @@ class NvrDialog(QDialog):
         self._editing = nvr is not None
         self.setWindowTitle("Editar NVR" if self._editing else "Adicionar NVR")
         self.setMinimumWidth(380)
-        self._test_worker: _ConnectionTestWorker | None = None
-        self._discovery_worker: _ChannelDiscoveryWorker | None = None
+        self._test_worker: ConnectionTestWorker | None = None
+        self._discovery_worker: ChannelDiscoveryWorker | None = None
         #: Populated by "Detectar canais"; consumed by MainWindow so the
         #: cameras it creates use the device's real channels and names.
         self.discovered_channels: list[DiscoveredChannel] | None = None
@@ -195,7 +147,7 @@ class NvrDialog(QDialog):
         self.test_button.setEnabled(False)
         self.test_result_label.setText("Testando conexão...")
 
-        self._test_worker = _ConnectionTestWorker(host, self.port_spin.value(), self)
+        self._test_worker = ConnectionTestWorker(host, self.port_spin.value(), self)
         self._test_worker.succeeded.connect(self._on_test_succeeded)
         self._test_worker.failed.connect(self._on_test_failed)
         self._test_worker.finished.connect(lambda: self.test_button.setEnabled(True))
@@ -214,7 +166,7 @@ class NvrDialog(QDialog):
         self.detect_button.setEnabled(False)
         self.test_result_label.setText("Detectando canais...")
 
-        self._discovery_worker = _ChannelDiscoveryWorker(host, username, password, self)
+        self._discovery_worker = ChannelDiscoveryWorker(host, username, password, self)
         self._discovery_worker.succeeded.connect(self._on_discovery_succeeded)
         self._discovery_worker.failed.connect(self._on_discovery_failed)
         self._discovery_worker.finished.connect(

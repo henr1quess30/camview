@@ -7,7 +7,8 @@ channel 2 main = 201, ...).
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import re
+from collections.abc import Iterable, Mapping
 from urllib.parse import quote
 
 from camview.models.camera import Camera, StreamType
@@ -36,6 +37,40 @@ def build_channel_url(
     user = quote(username, safe="")
     pwd = quote(password, safe="")
     return f"rtsp://{user}:{pwd}@{host}:{port}/Streaming/Channels/{channel_code}"
+
+
+#: Names a device hands out when nobody has named the camera yet. Anything
+#: matching these carries no information, so it is always safe to replace.
+_GENERIC_NAME_RE = re.compile(
+    r"^(canal|camera|câmera|ipcamera|ip camera|chn)\s*\d*$", re.IGNORECASE
+)
+
+
+def is_generic_camera_name(name: str) -> bool:
+    """Is this a placeholder like ``Canal 3`` or ``Camera 01``?"""
+    return bool(_GENERIC_NAME_RE.match(name.strip()))
+
+
+def camera_names_to_update(
+    cameras: Iterable[Camera], discovered_names: Mapping[int, str]
+) -> list[Camera]:
+    """Cameras whose stored name the device disagrees with, updated.
+
+    The device is the authority on what a camera is called — its name is
+    what the operator typed into the recorder. The one thing never done
+    is the reverse: a real name is never replaced by a placeholder, so a
+    recorder that forgot its labels cannot wipe good ones here.
+    """
+    updated: list[Camera] = []
+    for camera in cameras:
+        discovered = discovered_names.get(camera.channel_number, "").strip()
+        if not discovered or discovered == camera.name:
+            continue
+        if is_generic_camera_name(discovered):
+            continue
+        camera.name = discovered
+        updated.append(camera)
+    return updated
 
 
 def generate_missing_channel_cameras(

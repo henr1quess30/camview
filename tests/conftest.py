@@ -86,7 +86,7 @@ def no_device_queries(monkeypatch: pytest.MonkeyPatch) -> None:
     this again; theirs is applied later and wins.
     """
     monkeypatch.setattr(
-        "camview.ui.main_window.channel_online_status",
+        "camview.ui.workers.channel_online_status",
         lambda *_args, **_kwargs: {},
     )
 

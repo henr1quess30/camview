@@ -6,6 +6,14 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
 ### Adicionado
 
+- **"Atualizar canais e nomes"** no menu de contexto do dispositivo: uma
+  consulta ao equipamento que cria os canais que faltam e **adota os
+  nomes reais das câmeras**. Antes a descoberta só criava canais novos e
+  nunca corrigia nomes, e ainda estava escondida em Editar → Detectar
+  canais → OK. A troca é sempre um upgrade: um genérico como "Canal 7" é
+  substituído pelo nome que o operador cadastrou no gravador, nunca o
+  contrário.
+
 - **Mosaicos com célula destacada**: além de 1x1 a 4x4, agora há **1+5**,
   **1+7** e **1+12** — uma câmera ocupando um bloco grande e as demais
   em volta. A escolha é salva junto com o layout.
