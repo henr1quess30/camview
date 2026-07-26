@@ -227,6 +227,9 @@ estão rodando continuam como estavam.
 
 Monte o mosaico como quiser e guarde-o com um nome ("Fábrica", "Portaria"):
 
+- **Layouts → Novo layout** (`Ctrl+N`) — fecha todas as câmeras e deixa o
+  mosaico em branco para você montar do zero (pergunta antes, se houver
+  câmeras abertas). A grade escolhida é mantida.
 - **Layouts → Salvar como...** (`Ctrl+Shift+S`) — pede o nome e grava a
   grade, quais câmeras estão em cada célula e o stream de cada uma.
 - **Layouts → Salvar** (`Ctrl+S`) — sobrescreve o layout que está aberto

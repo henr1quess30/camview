@@ -620,6 +620,12 @@ class MainWindow(QMainWindow):
         menu = self.layouts_menu
         menu.clear()
 
+        new_action = menu.addAction(_icon("document-new"), "&Novo layout")
+        new_action.setShortcut(QKeySequence.StandardKey.New)
+        new_action.setStatusTip("Esvaziar o mosaico para montar uma composição nova")
+        new_action.triggered.connect(self._new_layout)
+        menu.addSeparator()
+
         save_action = menu.addAction(_icon("document-save"), "&Salvar layout")
         save_action.setShortcut(QKeySequence.StandardKey.Save)
         save_action.triggered.connect(self._save_layout)
@@ -670,6 +676,28 @@ class MainWindow(QMainWindow):
                 )
             )
         return items
+
+    def _new_layout(self) -> None:
+        """Empty the mosaic to start composing from scratch.
+
+        Asks first when there are cameras on screen: the composition may
+        be one the user never saved, and closing every stream by accident
+        is not something a menu click should be able to do silently.
+        """
+        if self.video_grid.tiles():
+            confirm = QMessageBox.question(
+                self,
+                "CamView",
+                "Fechar todas as câmeras e começar um layout em branco?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+        self.video_grid.clear()
+        self._set_current_layout(None)
+        self.statusBar().showMessage(
+            "Layout em branco. Monte a composição e salve com Ctrl+Shift+S.", 5000
+        )
 
     def _save_layout(self) -> None:
         """Overwrite the layout on screen, or ask for a name if there is none."""
@@ -810,7 +838,11 @@ class MainWindow(QMainWindow):
                 self._layout_repository.get(self._current_layout_id)
             )
 
-        if accepted and dialog.selected_layout_id is not None:
+        if not accepted:
+            return
+        if dialog.blank_requested:
+            self._new_layout()
+        elif dialog.selected_layout_id is not None:
             self._load_layout(dialog.selected_layout_id)
 
     def _on_device_tree_item_double_clicked(

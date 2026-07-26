@@ -198,6 +198,97 @@ class TestSaveLayout:
         window.video_grid.clear()
 
 
+class TestNewLayout:
+    def test_starting_blank_empties_the_mosaic(
+        self, window: MainWindow, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        window._open_camera_at(camera_ids(window)[0], 0)
+        monkeypatch.setattr(
+            QMessageBox,
+            "question",
+            staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes),
+        )
+
+        window._new_layout()
+
+        assert window.video_grid.tiles() == {}
+        assert window.windowTitle() == "CamView"
+
+    def test_it_asks_before_closing_cameras(
+        self, window: MainWindow, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A menu click must not silently drop an unsaved composition."""
+        window._open_camera_at(camera_ids(window)[0], 0)
+        monkeypatch.setattr(
+            QMessageBox,
+            "question",
+            staticmethod(lambda *a, **k: QMessageBox.StandardButton.No),
+        )
+
+        window._new_layout()
+
+        assert list(window.video_grid.tiles()) == [0]
+        window.video_grid.clear()
+
+    def test_an_empty_mosaic_needs_no_confirmation(
+        self, window: MainWindow, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fail(*_args: object, **_kwargs: object) -> object:
+            raise AssertionError("nothing to lose, nothing to ask")
+
+        monkeypatch.setattr(QMessageBox, "question", staticmethod(fail))
+
+        window._new_layout()
+
+        assert window.video_grid.tiles() == {}
+
+    def test_it_detaches_from_the_loaded_layout(
+        self, window: MainWindow, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Ctrl+S afterwards must ask for a name, not overwrite the old one."""
+        window._open_camera_at(camera_ids(window)[0], 0)
+        accept_name(monkeypatch, "Fábrica")
+        window._save_layout_as()
+        monkeypatch.setattr(
+            QMessageBox,
+            "question",
+            staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes),
+        )
+
+        window._new_layout()
+
+        assert window._current_layout_id is None
+
+    def test_the_menu_offers_it(self, window: MainWindow) -> None:
+        window._rebuild_layouts_menu()
+
+        labels = [action.text() for action in window.layouts_menu.actions()]
+        assert "&Novo layout" in labels
+
+    def test_the_manager_dialog_offers_it(
+        self, window: MainWindow, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        window._open_camera_at(camera_ids(window)[0], 0)
+        accept_name(monkeypatch, "Fábrica")
+        window._save_layout_as()
+
+        def fake_exec(dialog: LayoutManagerDialog) -> int:
+            dialog.new_button.click()
+            return dialog.result()
+
+        monkeypatch.setattr(LayoutManagerDialog, "exec", fake_exec)
+        monkeypatch.setattr(
+            QMessageBox,
+            "question",
+            staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes),
+        )
+
+        window._manage_layouts()
+
+        assert window.video_grid.tiles() == {}
+        assert window._current_layout_id is None
+
+
 class TestLoadLayout:
     def _save(
         self, window: MainWindow, monkeypatch: pytest.MonkeyPatch, name: str

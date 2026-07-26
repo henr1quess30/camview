@@ -2,6 +2,16 @@
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [Não lançado]
+
+### Adicionado
+
+- **Novo layout em branco** (`Ctrl+N`, menu Layouts e botão no gerenciador
+  de layouts): fecha todas as câmeras e deixa o mosaico vazio para montar
+  uma composição do zero, mantendo a grade escolhida. Pergunta antes
+  quando há câmeras abertas, já que a composição na tela pode nunca ter
+  sido salva.
+
 ## [0.2.0] — 2026-07-26
 
 ### Adicionado

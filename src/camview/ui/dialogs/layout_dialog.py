@@ -46,6 +46,8 @@ class LayoutManagerDialog(QDialog):
         self._layout_repository = layout_repository
         #: Layout the user chose to load; ``None`` unless the dialog was accepted.
         self.selected_layout_id: int | None = None
+        #: The user asked to start from an empty mosaic instead.
+        self.blank_requested = False
 
         self._build_ui()
         self.refresh()
@@ -61,6 +63,9 @@ class LayoutManagerDialog(QDialog):
         root.addWidget(self.list_widget)
 
         buttons = QHBoxLayout()
+        self.new_button = QPushButton("Novo (em branco)")
+        self.new_button.setToolTip("Esvaziar o mosaico para montar uma composição nova")
+        self.new_button.clicked.connect(self._request_blank)
         self.load_button = QPushButton("Carregar")
         self.load_button.setDefault(True)
         self.load_button.clicked.connect(self._load)
@@ -71,6 +76,7 @@ class LayoutManagerDialog(QDialog):
         close_button = QPushButton("Fechar")
         close_button.clicked.connect(self.reject)
 
+        buttons.addWidget(self.new_button)
         buttons.addWidget(self.load_button)
         buttons.addWidget(self.rename_button)
         buttons.addWidget(self.delete_button)
@@ -108,6 +114,11 @@ class LayoutManagerDialog(QDialog):
         if layout_id is None:
             return
         self.selected_layout_id = layout_id
+        self.accept()
+
+    def _request_blank(self) -> None:
+        """Ask for an empty mosaic; MainWindow does the emptying."""
+        self.blank_requested = True
         self.accept()
 
     def _rename(self) -> None:
