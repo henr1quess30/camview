@@ -20,10 +20,11 @@ htmlcov/
 .idea/
 *.swp
 
-# CamView runtime data (local dev DB, logs)
+# CamView runtime data (local dev DB, logs, PIDs de scripts de validação)
 *.db
 *.db-journal
 *.log
+*.pid
 
 # OS
 .DS_Store
