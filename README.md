@@ -163,12 +163,19 @@ inclusive no modo escuro) — não há tema próprio embutido.
 
 Como usar hoje:
 
-- Menu **NVR → Adicionar NVR...** para cadastrar um equipamento. No campo
+- Menu **Dispositivos → Gerenciar dispositivos...** (`Ctrl+D`, ou o botão
+  **Dispositivos** na barra) abre a tabela com tudo que está cadastrado:
+  nome, endereço, tipo, canais e se a senha está guardada. Marque as
+  caixas para **excluir vários de uma vez** — uma única confirmação, que
+  lista o que vai embora — ou para atualizar canais em lote. O campo de
+  filtro encurta a lista por nome ou endereço. Adicionar, editar e
+  excluir começam todos por aqui.
+- Menu **Dispositivos → Adicionar NVR...** para cadastrar um equipamento. No campo
   **Dispositivo** escolha **NVR/DVR** (os canais são gerados
   automaticamente) ou **Câmera avulsa** — nesse caso não há canais a
   informar, ela aparece como uma linha única na lista e o duplo clique
   **abre direto em tela cheia**.
-- Menu **NVR → Adicionar câmeras por URL...** para cadastrar em lote: cole
+- Menu **Dispositivos → Adicionar câmeras por URL...** para cadastrar em lote: cole
   uma lista de URLs RTSP (uma por linha) e cada uma vira uma câmera. É o
   caminho para equipamentos que não seguem a numeração de canais da
   Hikvision — o caminho do stream vem da própria URL, como

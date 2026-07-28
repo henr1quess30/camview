@@ -6,6 +6,16 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
 ### Adicionado
 
+- **Gerenciador de dispositivos** (Dispositivos → Gerenciar, `Ctrl+D`, ou
+  o botão da barra de ferramentas): uma tabela com tudo que está
+  cadastrado — nome, endereço, tipo, número de canais e se a senha está
+  no keyring — com caixas de seleção. Dá para **excluir vários de uma
+  vez**, com uma única confirmação que lista o que vai embora, além de
+  editar, atualizar canais e cadastrar dali mesmo. Um filtro por nome ou
+  endereço encurta a lista. Antes, cada dispositivo era removido
+  individualmente pelo menu de contexto da árvore, com uma confirmação
+  para cada.
+
 - **Cadastro de câmeras por URL RTSP** (NVR → Adicionar câmeras por
   URL...): cole uma lista de URLs, uma por linha, e cada uma vira uma
   câmera avulsa. Serve para equipamentos que não seguem a numeração de
@@ -14,6 +24,13 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
   decodificadas, a senha vai para o keyring e a URL não é armazenada.
   O substream é palpitado a partir do caminho principal e pode ser
   editado ou apagado na prévia.
+
+### Alterado
+
+- O menu **NVR** virou **Dispositivos**, e o botão "Adicionar NVR" da
+  barra de ferramentas virou "Dispositivos", que abre o gerenciador — de
+  onde também se adiciona. A barra criava equipamento mas nunca
+  conseguia corrigir ou remover.
 
 ## [0.3.0] — 2026-07-26
 

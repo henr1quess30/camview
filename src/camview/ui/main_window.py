@@ -66,6 +66,7 @@ from camview.services.stream_manager import (
     bytes_received,
     get_vlc_instance,
 )
+from camview.ui.dialogs.device_manager_dialog import DeviceManagerDialog
 from camview.ui.dialogs.layout_dialog import LayoutManagerDialog
 from camview.ui.dialogs.nvr_dialog import NvrDialog
 from camview.ui.dialogs.paste_urls_dialog import PasteUrlsDialog
@@ -203,6 +204,9 @@ class MainWindow(QMainWindow):
         self._status_workers: set[ChannelStatusWorker] = set()
         #: Ownership for the on-demand "ask the device" queries.
         self._sync_workers: set[ChannelDiscoveryWorker] = set()
+        #: The device manager while it is open, so async results (a sync
+        #: that lands after the click) reach its table too.
+        self._device_manager: DeviceManagerDialog | None = None
         self._update_workers: set[UpdateCheckWorker] = set()
 
         self._build_sidebar()
@@ -264,10 +268,15 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
 
-        add_nvr_action = QAction(_icon("list-add"), "Adicionar NVR", self)
-        add_nvr_action.setToolTip("Cadastrar um novo NVR")
-        add_nvr_action.triggered.connect(self._add_nvr)
-        toolbar.addAction(add_nvr_action)
+        # One button for everything about devices: adding used to sit here
+        # alone, which meant the toolbar could create equipment but never
+        # fix or remove it.
+        manage_action = QAction(_icon("network-server"), "Dispositivos", self)
+        manage_action.setToolTip(
+            "Gerenciar dispositivos cadastrados — adicionar, editar, excluir (Ctrl+D)"
+        )
+        manage_action.triggered.connect(self._manage_devices)
+        toolbar.addAction(manage_action)
         toolbar.addSeparator()
 
         shape_label = QLabel("Mosaico: ")
@@ -306,7 +315,18 @@ class MainWindow(QMainWindow):
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
 
-        nvr_menu = self.menuBar().addMenu("&NVR")
+        nvr_menu = self.menuBar().addMenu("&Dispositivos")
+
+        manage_action = QAction(
+            _icon("configure", "preferences-system"), "&Gerenciar dispositivos...", self
+        )
+        manage_action.setShortcut(QKeySequence("Ctrl+D"))
+        manage_action.setStatusTip(
+            "Ver, editar e excluir em lote tudo que está cadastrado"
+        )
+        manage_action.triggered.connect(self._manage_devices)
+        nvr_menu.addAction(manage_action)
+        nvr_menu.addSeparator()
 
         add_nvr_action = QAction(_icon("list-add"), "&Adicionar NVR...", self)
         add_nvr_action.triggered.connect(self._add_nvr)
@@ -576,7 +596,21 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "CamView", f"{context}.\n\nDetalhe: {exc}")
 
     def _refresh_device_tree(self) -> None:
-        """Reload the sidebar, reporting instead of crashing on a DB error."""
+        """Reload the sidebar, reporting instead of crashing on a DB error.
+
+        The device manager, when open, is showing the same records — a
+        channel sync that lands while it is up must not leave it stale.
+        """
+        try:
+            self.device_tree.refresh()
+        except sqlite3.Error as exc:
+            self._report_error("Não foi possível ler os NVRs cadastrados", exc)
+
+        if self._device_manager is not None:
+            self._device_manager.refresh()
+
+    def _refresh_sidebar_only(self) -> None:
+        """Reload just the tree, for changes the manager already absorbed."""
         try:
             self.device_tree.refresh()
         except sqlite3.Error as exc:
@@ -626,7 +660,38 @@ class MainWindow(QMainWindow):
         menu.addSeparator()
         remove_action = menu.addAction(_icon("list-remove"), "Remover")
         remove_action.triggered.connect(partial(self._remove_nvr, nvr_id))
+
+        manage_action = menu.addAction(
+            _icon("configure", "preferences-system"), "Gerenciar dispositivos..."
+        )
+        manage_action.triggered.connect(self._manage_devices)
         return menu
+
+    def _manage_devices(self) -> None:
+        """Open the one place where devices are added, edited and removed.
+
+        The dialog owns deleting (self-contained) and delegates the rest
+        back here, because adding and editing open further dialogs and
+        syncing needs the worker threads this window already manages.
+        """
+        dialog = DeviceManagerDialog(
+            self._nvr_repository, self._camera_repository, parent=self
+        )
+        dialog.addNvrRequested.connect(self._add_nvr)
+        dialog.pasteUrlsRequested.connect(self._add_cameras_from_urls)
+        dialog.editRequested.connect(self._edit_nvr)
+        dialog.syncRequested.connect(self._sync_device)
+        # Only the tree: the dialog has already refreshed its own table
+        # after the deletion that raised this.
+        dialog.devicesChanged.connect(self._refresh_sidebar_only)
+
+        self._device_manager = dialog
+        try:
+            dialog.exec()
+        finally:
+            # Cleared no matter how the dialog ended, so a later refresh
+            # never touches a dead widget.
+            self._device_manager = None
 
     def _add_nvr(self) -> None:
         dialog = NvrDialog(parent=self)

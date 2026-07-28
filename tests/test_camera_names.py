@@ -195,7 +195,12 @@ class TestSyncingADevice:
         menu = window.build_device_context_menu(nvr.id)  # type: ignore[arg-type]
 
         labels = [action.text() for action in menu.actions() if action.text()]
-        assert labels == ["Editar...", "Atualizar canais e nomes", "Remover"]
+        assert labels == [
+            "Editar...",
+            "Atualizar canais e nomes",
+            "Remover",
+            "Gerenciar dispositivos...",
+        ]
 
     def test_the_menu_action_starts_the_query(
         self, window: MainWindow, monkeypatch: pytest.MonkeyPatch

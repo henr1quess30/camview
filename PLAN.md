@@ -47,6 +47,34 @@ marcas publicam um caminho próprio — o usuário trouxe 16 com
 Validado com as 16 câmeras reais do usuário: **16/16 reproduzindo**, de
 1280x720 a 2688x1520.
 
+## Gerenciador de dispositivos (pedido do usuário)
+
+Cadastrar 16 câmeras de uma vez expôs o outro lado: gerenciá-las era um
+clique-direito por vez na árvore, com uma confirmação por exclusão. As
+ações também estavam espalhadas — adicionar no menu NVR, editar/remover
+no menu de contexto.
+
+- **`DeviceManagerDialog`** é o lugar único: tabela com caixas de
+  seleção, filtro por nome/endereço e as ações no rodapé.
+- **Excluir em lote** é a razão de existir: uma confirmação para o lote
+  inteiro, listando até 10 nomes. Uma falha não abandona o resto.
+- **Divisão de responsabilidade**, seguindo o `LayoutManagerDialog`:
+  excluir é auto-contido e acontece no diálogo; adicionar, editar e
+  sincronizar viram **sinais** que a `MainWindow` atende, porque abrem
+  outros diálogos ou precisam dos workers dela.
+- **Invariante do filtro:** o que o filtro esconde é desmarcado. Sem
+  isso, "excluir 3" poderia levar um quarto dispositivo fora de vista —
+  inaceitável num botão destrutivo.
+- **A coluna "Senha" não bate na rede.** Ela lê o keyring, que é local:
+  diz se o dispositivo tem senha armazenada, que é o que de fato impede
+  um stream de abrir. Um status de conectividade real exigiria consultar
+  todos os equipamentos ao abrir a janela — exatamente o tipo de rajada
+  que já bloqueou nosso IP em Hikvision.
+- **"Atualizar canais" só habilita para NVRs:** uma câmera avulsa tem o
+  único canal com que foi cadastrada, e nada a perguntar sobre ele.
+
+Renderizado contra o banco real: 27 dispositivos, 4 NVRs e 23 câmeras.
+
 **Achado que vale registrar:** nessas câmeras o `/live/sub` existe mas
 devolve a mesma resolução do principal, então não alivia nada. Com as 16
 abertas num 4x4, a carga do sistema foi a **16,8 numa máquina de 8

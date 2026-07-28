@@ -215,10 +215,12 @@ class TestThemeIconLookup:
 
 class TestToolbar:
     def test_toolbar_exposes_the_common_actions(self, window: MainWindow) -> None:
+        """"Dispositivos" replaced "Adicionar NVR": the toolbar could
+        create equipment but never fix or remove it."""
         toolbar = window.findChild(QToolBar, "mainToolbar")
         assert toolbar is not None
         labels = [action.text() for action in toolbar.actions() if action.text()]
-        assert labels == ["Adicionar NVR", "Salvar layout"]
+        assert labels == ["Dispositivos", "Salvar layout"]
 
     def test_grid_selector_offers_every_shape(self, window: MainWindow) -> None:
         shapes = [
