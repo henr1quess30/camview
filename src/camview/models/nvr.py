@@ -42,6 +42,13 @@ class Nvr:
     rtsp_port: int = 554
     default_stream: StreamType = StreamType.MAIN
     device_type: DeviceType = DeviceType.NVR
+    #: RTSP path for equipment that does not follow the Hikvision channel
+    #: convention (e.g. ``/live/main``). Empty means "derive it", which is
+    #: what every Hikvision NVR and camera needs.
+    stream_path: str = ""
+    #: Optional second path for the sub stream; falls back to
+    #: :attr:`stream_path` when the camera only publishes one.
+    stream_path_sub: str = ""
     id: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -49,3 +56,8 @@ class Nvr:
     @property
     def is_camera(self) -> bool:
         return self.device_type is DeviceType.CAMERA
+
+    @property
+    def has_custom_path(self) -> bool:
+        """Does this device carry its own RTSP path instead of channels?"""
+        return bool(self.stream_path)

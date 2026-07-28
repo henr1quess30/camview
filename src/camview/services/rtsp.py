@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping
-from urllib.parse import quote
+from dataclasses import dataclass
+from urllib.parse import quote, unquote, urlparse
 
 from camview.models.camera import Camera, StreamType
 
@@ -37,6 +38,100 @@ def build_channel_url(
     user = quote(username, safe="")
     pwd = quote(password, safe="")
     return f"rtsp://{user}:{pwd}@{host}:{port}/Streaming/Channels/{channel_code}"
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedStream:
+    """The pieces of a pasted RTSP URL.
+
+    ``password`` is returned decoded and must be handed straight to the
+    keyring — never written to the database, and never logged.
+    """
+
+    host: str
+    port: int
+    username: str
+    password: str
+    path: str
+
+    @property
+    def suggested_name(self) -> str:
+        """Something usable in the sidebar until the user renames it."""
+        return f"Câmera {self.host}"
+
+    @property
+    def suggested_sub_path(self) -> str:
+        """A likely sub-stream path, or empty when there is no hint.
+
+        Cameras that serve ``/live/main`` almost always serve
+        ``/live/sub``. It is only a guess, so the caller shows it and lets
+        the user clear it.
+        """
+        for main, sub in (("main", "sub"), ("stream1", "stream2"), ("0", "1")):
+            if self.path.endswith(main):
+                return self.path[: -len(main)] + sub
+        return ""
+
+
+def parse_rtsp_url(url: str) -> ParsedStream | None:
+    """Pull host, credentials and path out of a full ``rtsp://`` URL.
+
+    Returns ``None`` for anything that is not a usable RTSP URL, so a
+    pasted block of text can be filtered line by line without raising.
+    Percent-encoded credentials are decoded here: a password like
+    ``Se%40nha%23123`` is what the URL carries, not what the camera
+    expects.
+    """
+    text = (url or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = urlparse(text)
+    except ValueError:
+        return None
+    if parsed.scheme not in ("rtsp", "rtsps") or not parsed.hostname:
+        return None
+
+    path = parsed.path or ""
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+    return ParsedStream(
+        host=parsed.hostname,
+        port=parsed.port or 554,
+        username=unquote(parsed.username or ""),
+        password=unquote(parsed.password or ""),
+        path=path or "/",
+    )
+
+
+def parse_rtsp_urls(text: str) -> list[ParsedStream]:
+    """Every usable RTSP URL in a pasted block, in order, without repeats."""
+    seen: set[tuple[str, int, str]] = set()
+    streams: list[ParsedStream] = []
+    for line in (text or "").splitlines():
+        stream = parse_rtsp_url(line)
+        if stream is None:
+            continue
+        key = (stream.host, stream.port, stream.path)
+        if key in seen:
+            continue
+        seen.add(key)
+        streams.append(stream)
+    return streams
+
+
+def build_stream_url(
+    *, host: str, port: int, username: str, password: str, path: str
+) -> str:
+    """Build an RTSP URL for a camera with its own stream path.
+
+    For equipment that does not follow the Hikvision channel convention —
+    the path is whatever the camera's manual says, e.g. ``/live/main``.
+    """
+    user = quote(username, safe="")
+    pwd = quote(password, safe="")
+    suffix = path if path.startswith("/") else f"/{path}"
+    return f"rtsp://{user}:{pwd}@{host}:{port}{suffix}"
 
 
 #: Names a device hands out when nobody has named the camera yet. Anything

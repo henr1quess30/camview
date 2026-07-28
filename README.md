@@ -168,6 +168,12 @@ Como usar hoje:
   automaticamente) ou **Câmera avulsa** — nesse caso não há canais a
   informar, ela aparece como uma linha única na lista e o duplo clique
   **abre direto em tela cheia**.
+- Menu **NVR → Adicionar câmeras por URL...** para cadastrar em lote: cole
+  uma lista de URLs RTSP (uma por linha) e cada uma vira uma câmera. É o
+  caminho para equipamentos que não seguem a numeração de canais da
+  Hikvision — o caminho do stream vem da própria URL, como
+  `rtsp://usuario:senha@192.168.0.10:554/live/main`. As senhas vão para o
+  keyring; a URL não é guardada.
 - **Duplo clique no NVR** abre **todos os canais dele de uma vez**, ajustando
   a grade automaticamente ao número de câmeras (4 canais → 2x2, 16 → 4x4).
 - **Botão direito num dispositivo → "Atualizar canais e nomes"** pergunta ao

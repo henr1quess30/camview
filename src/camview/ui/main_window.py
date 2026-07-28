@@ -40,7 +40,7 @@ from camview.database.repositories import (
 )
 from camview.models.camera import Camera, StreamType
 from camview.models.layout import Layout, LayoutItem
-from camview.models.nvr import Nvr
+from camview.models.nvr import DeviceType, Nvr
 from camview.models.settings import AppSettings
 from camview.services.credentials import (
     CredentialsError,
@@ -51,6 +51,7 @@ from camview.services.credentials import (
 from camview.services.hikvision import DiscoveredChannel
 from camview.services.rtsp import (
     build_channel_url,
+    build_stream_url,
     camera_names_to_update,
     generate_missing_channel_cameras,
 )
@@ -67,6 +68,7 @@ from camview.services.stream_manager import (
 )
 from camview.ui.dialogs.layout_dialog import LayoutManagerDialog
 from camview.ui.dialogs.nvr_dialog import NvrDialog
+from camview.ui.dialogs.paste_urls_dialog import PasteUrlsDialog
 from camview.ui.dialogs.settings_dialog import SettingsDialog
 from camview.ui.widgets.device_tree import CAMERA_ID_ROLE, NVR_ID_ROLE, DeviceTree
 from camview.ui.widgets.status_panel import STATS_INTERVAL_MS, StatusPanel
@@ -112,6 +114,45 @@ def _icon(*names: str) -> QIcon:
         if not icon.isNull():
             return icon
     return QIcon()
+
+
+def _stream_urls_for(
+    camera: Camera, nvr: Nvr, password: str
+) -> dict[StreamType, str]:
+    """Both stream URLs for one camera.
+
+    A device with its own RTSP path (a camera from another maker) uses it
+    verbatim; everything else follows the Hikvision channel convention.
+    When such a camera publishes only one path, both stream types point at
+    it — the app still lets a cell "switch", it just gets the same feed.
+    """
+    if nvr.has_custom_path:
+        paths = {
+            StreamType.MAIN: nvr.stream_path,
+            StreamType.SUB: nvr.stream_path_sub or nvr.stream_path,
+        }
+        return {
+            stream_type: build_stream_url(
+                host=nvr.host,
+                port=nvr.rtsp_port,
+                username=nvr.username,
+                password=password,
+                path=path,
+            )
+            for stream_type, path in paths.items()
+        }
+
+    return {
+        stream_type: build_channel_url(
+            host=nvr.host,
+            port=nvr.rtsp_port,
+            username=nvr.username,
+            password=password,
+            channel_number=camera.channel_number,
+            stream_type=stream_type,
+        )
+        for stream_type in StreamType
+    }
 
 
 def _encode(blob: QByteArray) -> str:
@@ -270,6 +311,15 @@ class MainWindow(QMainWindow):
         add_nvr_action = QAction(_icon("list-add"), "&Adicionar NVR...", self)
         add_nvr_action.triggered.connect(self._add_nvr)
         nvr_menu.addAction(add_nvr_action)
+
+        paste_action = QAction(
+            _icon("edit-paste"), "Adicionar câmeras por &URL...", self
+        )
+        paste_action.setStatusTip(
+            "Colar uma lista de URLs RTSP, uma por linha"
+        )
+        paste_action.triggered.connect(self._add_cameras_from_urls)
+        nvr_menu.addAction(paste_action)
 
         self.layouts_menu = self.menuBar().addMenu("&Layouts")
         # Rebuilt on open: saved layouts change from the manager dialog and
@@ -596,6 +646,53 @@ class MainWindow(QMainWindow):
 
         self._refresh_device_tree()
         self.statusBar().showMessage(f"NVR '{created.name}' adicionado.", 5000)
+
+    def _add_cameras_from_urls(self) -> None:
+        """Register one camera per pasted RTSP URL.
+
+        Each becomes a standalone camera device carrying its own path, so
+        equipment that does not follow Hikvision's channel numbering works
+        without the app having to know the maker's convention.
+        """
+        dialog = PasteUrlsDialog(parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        added = 0
+        failures: list[str] = []
+        for stream, name, sub_path in dialog.result_streams():
+            try:
+                device = self._nvr_repository.create(
+                    Nvr(
+                        name=name,
+                        host=stream.host,
+                        rtsp_port=stream.port,
+                        username=stream.username,
+                        channel_count=1,
+                        device_type=DeviceType.CAMERA,
+                        stream_path=stream.path,
+                        stream_path_sub=sub_path,
+                    )
+                )
+                if stream.password:
+                    set_nvr_password(device.id, stream.password)  # type: ignore[arg-type]
+                self._camera_repository.create(
+                    Camera(nvr_id=device.id, channel_number=1, name=name)  # type: ignore[arg-type]
+                )
+                added += 1
+            except (CredentialsError, sqlite3.Error) as exc:
+                # One bad row must not cost the whole paste.
+                logger.error("Could not add camera %s: %s", stream.host, exc)
+                failures.append(f"{stream.host}: {exc}")
+
+        self._refresh_device_tree()
+        message = f"{added} câmera(s) adicionada(s)."
+        if failures:
+            message += f" {len(failures)} falhou(ram)."
+            QMessageBox.warning(
+                self, "CamView", "Não foi possível adicionar:\n\n" + "\n".join(failures)
+            )
+        self.statusBar().showMessage(message, 8000)
 
     def _edit_nvr(self, nvr_id: int) -> None:
         existing = self._nvr_repository.get(nvr_id)
@@ -1171,17 +1268,7 @@ class MainWindow(QMainWindow):
     ) -> None:
         # Both URLs are built up front so the tile can switch streams on
         # maximize without another keyring lookup.
-        stream_urls = {
-            candidate: build_channel_url(
-                host=nvr.host,
-                port=nvr.rtsp_port,
-                username=nvr.username,
-                password=password,
-                channel_number=camera.channel_number,
-                stream_type=candidate,
-            )
-            for candidate in StreamType
-        }
+        stream_urls = _stream_urls_for(camera, nvr, password)
         tile = VideoTile(
             title=camera.name,
             stream_urls=stream_urls,

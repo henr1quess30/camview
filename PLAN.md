@@ -24,6 +24,35 @@ validada antes de avançar para a próxima.
 - [x] Fase 10 — Testes
 - [x] Fase 11 — Empacotamento e documentação final
 
+## Câmeras cadastradas por URL (pedido do usuário)
+
+Até aqui todo dispositivo era um gravador Hikvision, e a URL era derivada
+da convenção de canais (`/Streaming/Channels/N01`). Câmeras de outras
+marcas publicam um caminho próprio — o usuário trouxe 16 com
+`/live/main`.
+
+- **`Nvr.stream_path` e `stream_path_sub`** (migração 4). Vazio significa
+  "derive pela convenção", que é o que todo dispositivo cadastrado antes
+  disso precisa.
+- **`parse_rtsp_url()`** desmonta a URL colada. Credenciais
+  percent-encoded são decodificadas: `Se%40nha%23123` é o que a URL
+  carrega, não o que a câmera espera.
+- **Diálogo de colar em lote** com prévia editável: nome e substream
+  podem ser ajustados antes de cadastrar, e o resumo avisa quantas URLs
+  vieram sem senha — porque o app se recusa a abrir stream sem senha
+  armazenada, e descobrir isso depois de cadastrar 16 seria irritante.
+- **Palpite de substream** (`/live/main` → `/live/sub`): mostrado, nunca
+  imposto.
+
+Validado com as 16 câmeras reais do usuário: **16/16 reproduzindo**, de
+1280x720 a 2688x1520.
+
+**Achado que vale registrar:** nessas câmeras o `/live/sub` existe mas
+devolve a mesma resolução do principal, então não alivia nada. Com as 16
+abertas num 4x4, a carga do sistema foi a **16,8 numa máquina de 8
+threads** — saturada. Mosaico cheio com essas câmeras exige ou menos
+células, ou um stream secundário de verdade configurado no equipamento.
+
 ## Distribuição e atualizações (pedido do usuário)
 
 O usuário quis distribuir para uma comunidade e perguntou sobre patente.

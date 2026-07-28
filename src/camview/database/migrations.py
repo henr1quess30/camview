@@ -102,6 +102,21 @@ def _apply_v3_layout_shape(connection: sqlite3.Connection) -> None:
     )
 
 
+def _apply_v4_stream_path(connection: sqlite3.Connection) -> None:
+    """Let a device carry its own RTSP path.
+
+    Cameras from other makers do not follow Hikvision's channel numbering
+    — they publish something like ``/live/main``. Empty keeps the derived
+    behaviour, which is what every device registered before this used.
+    """
+    connection.execute(
+        "ALTER TABLE nvrs ADD COLUMN stream_path TEXT NOT NULL DEFAULT ''"
+    )
+    connection.execute(
+        "ALTER TABLE nvrs ADD COLUMN stream_path_sub TEXT NOT NULL DEFAULT ''"
+    )
+
+
 MIGRATIONS: list[Migration] = [
     Migration(
         version=1,
@@ -117,6 +132,11 @@ MIGRATIONS: list[Migration] = [
         version=3,
         description="Add layouts.shape for non-uniform mosaics",
         apply=_apply_v3_layout_shape,
+    ),
+    Migration(
+        version=4,
+        description="Add nvrs.stream_path for cameras with their own RTSP path",
+        apply=_apply_v4_stream_path,
     ),
 ]
 

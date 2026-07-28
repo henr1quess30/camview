@@ -26,9 +26,9 @@ class NvrRepository:
                 """
                 INSERT INTO nvrs (
                     name, host, rtsp_port, username, channel_count,
-                    default_stream, device_type
+                    default_stream, device_type, stream_path, stream_path_sub
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     nvr.name,
@@ -38,6 +38,8 @@ class NvrRepository:
                     nvr.channel_count,
                     nvr.default_stream.value,
                     nvr.device_type.value,
+                    nvr.stream_path,
+                    nvr.stream_path_sub,
                 ),
             )
         created = self.get(cursor.lastrowid)
@@ -62,7 +64,8 @@ class NvrRepository:
                 """
                 UPDATE nvrs
                 SET name = ?, host = ?, rtsp_port = ?, username = ?, channel_count = ?,
-                    default_stream = ?, device_type = ?, updated_at = datetime('now')
+                    default_stream = ?, device_type = ?, stream_path = ?,
+                    stream_path_sub = ?, updated_at = datetime('now')
                 WHERE id = ?
                 """,
                 (
@@ -73,6 +76,8 @@ class NvrRepository:
                     nvr.channel_count,
                     nvr.default_stream.value,
                     nvr.device_type.value,
+                    nvr.stream_path,
+                    nvr.stream_path_sub,
                     nvr.id,
                 ),
             )
@@ -92,6 +97,8 @@ class NvrRepository:
             channel_count=row["channel_count"],
             default_stream=StreamType(row["default_stream"]),
             device_type=DeviceType(row["device_type"]),
+            stream_path=row["stream_path"],
+            stream_path_sub=row["stream_path_sub"],
             created_at=_parse_datetime(row["created_at"]),
             updated_at=_parse_datetime(row["updated_at"]),
         )
