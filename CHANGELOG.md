@@ -16,8 +16,8 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
   individualmente pelo menu de contexto da árvore, com uma confirmação
   para cada.
 
-- **Cadastro de câmeras por URL RTSP** (NVR → Adicionar câmeras por
-  URL...): cole uma lista de URLs, uma por linha, e cada uma vira uma
+- **Cadastro de câmeras por URL RTSP** (Dispositivos → Adicionar câmeras
+  por URL...): cole uma lista de URLs, uma por linha, e cada uma vira uma
   câmera avulsa. Serve para equipamentos que não seguem a numeração de
   canais da Hikvision, já que o caminho do stream (`/live/main`, por
   exemplo) passa a vir da própria URL. Credenciais percent-encoded são
