@@ -252,3 +252,45 @@ class TestVersionConsistency:
         declared = tomllib.loads(pyproject.read_text())["project"]["version"]
 
         assert _FALLBACK_VERSION == declared
+
+    def test_a_stale_editable_install_does_not_win(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The bug this fixes: a .venv installed at 0.1.0 and never
+        reinstalled made the running 0.3.0 announce 0.3.0 as an update."""
+        import camview
+
+        monkeypatch.setattr(camview, "_FALLBACK_VERSION", "0.3.0")
+        monkeypatch.setattr(
+            camview, "_installed_version", lambda _name: "0.1.0"
+        )
+
+        assert camview._running_version() == "0.3.0"
+
+    def test_a_real_install_ahead_of_the_source_wins(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Metadata is authoritative when it is not the stale one."""
+        import camview
+
+        monkeypatch.setattr(camview, "_FALLBACK_VERSION", "0.3.0")
+        monkeypatch.setattr(
+            camview, "_installed_version", lambda _name: "0.4.0"
+        )
+
+        assert camview._running_version() == "0.4.0"
+
+    def test_no_package_metadata_falls_back(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """How the Flatpak runs: the package is copied in, not pip-installed."""
+        import camview
+        from importlib.metadata import PackageNotFoundError
+
+        def missing(_name: str) -> str:
+            raise PackageNotFoundError(_name)
+
+        monkeypatch.setattr(camview, "_FALLBACK_VERSION", "0.3.0")
+        monkeypatch.setattr(camview, "_installed_version", missing)
+
+        assert camview._running_version() == "0.3.0"

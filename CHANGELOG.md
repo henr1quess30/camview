@@ -25,6 +25,15 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
   O substream é palpitado a partir do caminho principal e pode ser
   editado ou apagado na prévia.
 
+### Corrigido
+
+- **Aviso de versão falso ao rodar do código-fonte**: uma instalação
+  editável (`pip install -e .`) grava a versão no momento em que foi
+  feita e nunca mais a revisita, então um `.venv` criado na 0.1.0 fazia
+  a 0.3.0 em execução anunciar a própria 0.3.0 como novidade. A versão
+  em uso agora é a maior entre a metadata do pacote e a declarada no
+  código, que nunca fica atrás de si mesma.
+
 ### Alterado
 
 - O menu **NVR** virou **Dispositivos**, e o botão "Adicionar NVR" da
