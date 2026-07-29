@@ -58,7 +58,18 @@ flatpak install --user --noninteractive flathub \
 if flatpak info --user "$APP_ID" >/dev/null 2>&1; then
     INSTALLED=$(installed_version)
     echo "==> Atualizando o CamView (instalado: ${INSTALLED})"
-    flatpak install --user --noninteractive --reinstall --bundle "$BUNDLE"
+    # Remove and install, rather than --reinstall. --reinstall works on
+    # some machines and fails on others with "Diretório não vazio",
+    # depending on the flatpak version and on whether the app was running
+    # — an upgrade path that works most of the time is worse than one
+    # that always does.
+    #
+    # Nothing of the user's is lost: uninstall without --delete-data
+    # leaves ~/.var/app alone, and the passwords were never in the
+    # sandbox to begin with — they are in the system keyring, reached
+    # through the secrets portal.
+    flatpak uninstall --user --noninteractive "$APP_ID"
+    flatpak install --user --noninteractive --bundle "$BUNDLE"
     ACTION="atualizado"
 else
     echo "==> CamView"
