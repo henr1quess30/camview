@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot installer for CamView.
+# One-shot installer and updater for CamView.
 #
 #   ./install-flatpak.sh CamView.flatpak
 #   ./install-flatpak.sh                  # picks CamView.flatpak in this folder
@@ -7,6 +7,13 @@
 # Installs everything the app needs and leaves it working: the KDE
 # runtime, the PySide base, and the ffmpeg extension that carries H.265 —
 # without which cameras connect and then close instantly.
+#
+# Run it again with a newer bundle to update. That needs saying because
+# neither obvious route works: a bundle carries no repository to poll, so
+# `flatpak update` reports "Nothing to update" forever, and a plain
+# `flatpak install --bundle` refuses with "já instalado". Devices,
+# layouts and passwords are untouched either way — they live in
+# ~/.var/app and the keyring, neither of which reinstalling replaces.
 set -euo pipefail
 
 BUNDLE="${1:-CamView.flatpak}"
@@ -14,6 +21,14 @@ APP_ID="io.github.henr1quess30.CamView"
 RUNTIME_VERSION="6.9"
 
 die() { printf '\n%s\n' "$*" >&2; exit 1; }
+
+# `flatpak info` has no machine-readable version flag on every release —
+# --show-version is rejected outright by some — so read the column that
+# `list` has always had.
+installed_version() {
+    flatpak list --app --user --columns=application,version 2>/dev/null \
+        | awk -v id="$APP_ID" '$1 == id { print $2 }'
+}
 
 if ! command -v flatpak >/dev/null; then
     cat >&2 <<'EOF'
@@ -40,12 +55,22 @@ flatpak install --user --noninteractive flathub \
     "org.kde.Platform//${RUNTIME_VERSION}" \
     "org.freedesktop.Platform.ffmpeg-full//24.08"
 
-echo "==> CamView"
-flatpak install --user --noninteractive --bundle "$BUNDLE"
+if flatpak info --user "$APP_ID" >/dev/null 2>&1; then
+    INSTALLED=$(installed_version)
+    echo "==> Atualizando o CamView (instalado: ${INSTALLED})"
+    flatpak install --user --noninteractive --reinstall --bundle "$BUNDLE"
+    ACTION="atualizado"
+else
+    echo "==> CamView"
+    flatpak install --user --noninteractive --bundle "$BUNDLE"
+    ACTION="instalado"
+fi
+
+NOW=$(installed_version)
 
 cat <<EOF
 
-Pronto. O CamView já aparece no menu de aplicativos, ou rode:
+CamView ${NOW} ${ACTION}. Ele já aparece no menu de aplicativos, ou rode:
 
     flatpak run ${APP_ID}
 

@@ -40,6 +40,23 @@ flatpak run io.github.henr1quess30.CamView
 > **Só falta o `flatpak`?** `sudo pacman -S flatpak` (Arch/EndeavourOS),
 > `sudo apt install flatpak` (Ubuntu/Mint/Debian). No Fedora já vem.
 
+#### Atualizar para uma versão nova
+
+Baixe o `CamView.flatpak` da release nova e rode o mesmo script:
+
+```bash
+./install-flatpak.sh CamView.flatpak
+```
+
+Seus dispositivos, layouts e senhas continuam onde estão — ficam em
+`~/.var/app/` e no keyring, que a reinstalação não toca.
+
+> **Por que não `flatpak update`?** Porque um bundle não carrega
+> repositório para consultar: o comando responde "Nothing to update" para
+> sempre, mesmo com uma release nova publicada. E um
+> `flatpak install --bundle` cru recusa com "já instalado". O script cobre
+> os dois casos — ele detecta o que já está lá e reinstala por cima.
+
 ### Arch/EndeavourOS pelo PKGBUILD
 
 ```bash
