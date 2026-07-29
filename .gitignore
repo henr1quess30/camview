@@ -28,3 +28,8 @@ htmlcov/
 
 # OS
 .DS_Store
+
+# AppImage build artefacts (ferramenta baixada e binários gerados)
+packaging/appimage/appimagetool
+packaging/appimage/dist/
+packaging/appimage/AppDir/

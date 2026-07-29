@@ -1,0 +1,34 @@
+# Build environment for the CamView AppImage.
+#
+# Ubuntu 22.04 on purpose, and not something newer: an AppImage carries
+# the libraries of the machine that built it, and glibc only works
+# forwards. Built on Arch (glibc 2.44) the result starts on Arch and
+# nothing else. 22.04 gives glibc 2.35, which covers Ubuntu 22.04+,
+# Debian 12+, Fedora 36+ and current Mint — the point of shipping an
+# AppImage at all.
+FROM docker.io/library/ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# CamView needs Python 3.12; 22.04 ships 3.10, so it comes from
+# deadsnakes. Nothing else here is version-sensitive.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        software-properties-common ca-certificates gnupg curl file \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        python3.12 python3.12-venv python3.12-dev \
+    && rm -rf /var/lib/apt/lists/*
+# Deliberately not python3-pip: that one belongs to 22.04's Python 3.10
+# and imports distutils, which 3.12 removed. The build makes its own pip
+# inside a 3.12 venv instead.
+
+# The whole VLC, not just libvlc: RTSP transport (live555), the H.264/H.265
+# decoders (ffmpeg) and the video output modules are separate packages, and
+# libvlc without them connects and shows nothing. Same trap as the PKGBUILD.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        vlc libvlc5 libvlccore9 vlc-plugin-base vlc-plugin-video-output \
+        libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0 \
+        libegl1 libgl1 libopengl0 libfontconfig1 libdbus-1-3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build

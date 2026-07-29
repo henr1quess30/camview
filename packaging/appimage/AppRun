@@ -1,21 +1,39 @@
 #!/bin/bash
-# AppImage entry point (skeleton — see ../README.md).
+# AppImage entry point.
 #
-# Two things must be set before Python starts, and both are the reason a
-# naive bundle of this app shows no video at all:
+# Four things must be set before Python starts, and each one is a way a
+# naive bundle of this app fails:
 #
-#   1. libVLC looks for its plugins at a path baked in at build time. In a
-#      relocatable bundle that path is wrong, so it must be pointed at the
-#      bundled copy explicitly.
-#   2. libVLC 3.x can only embed video into an X11 window, so the app runs
+#   1. libVLC looks for its plugins at a path baked in at build time. Once
+#      mounted somewhere else that path is wrong, and the failure is
+#      quiet — cameras connect and the cell stays black.
+#   2. The bundled Python must find its own standard library, not
+#      whatever the host happens to have.
+#   3. Qt resolves its plugins relative to the PySide6 package, which is
+#      no longer where the wheel put it.
+#   4. libVLC 3.x can only embed video into an X11 window, so the app runs
 #      under XWayland even on a Wayland session.
 set -euo pipefail
 
 HERE="$(dirname "$(readlink -f "${0}")")"
+PY_TAG="$(basename "$(find "${HERE}/usr/lib" -maxdepth 1 -name 'python3.*' -type d | head -1)")"
 
 export VLC_PLUGIN_PATH="${HERE}/usr/lib/vlc/plugins"
 export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH:-}"
-export PYTHONPATH="${HERE}/usr/lib/python/site-packages:${PYTHONPATH:-}"
+
+# PYTHONHOME points the interpreter at the bundled standard library;
+# without it a host installation can shadow it and the imports fail in
+# confusing ways.
+export PYTHONHOME="${HERE}/usr"
+export PYTHONPATH="${HERE}/usr/lib/${PY_TAG}/site-packages:${PYTHONPATH:-}"
+export PYTHONDONTWRITEBYTECODE=1
+
+QT_ROOT="${HERE}/usr/lib/${PY_TAG}/site-packages/PySide6/Qt"
+if [ -d "${QT_ROOT}/plugins" ]; then
+    export QT_PLUGIN_PATH="${QT_ROOT}/plugins"
+    export LD_LIBRARY_PATH="${QT_ROOT}/lib:${LD_LIBRARY_PATH}"
+fi
+
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
 
 exec "${HERE}/usr/bin/python3" -m camview "$@"
