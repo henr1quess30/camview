@@ -55,7 +55,33 @@ Seus dispositivos, layouts e senhas continuam onde estão — ficam em
 > repositório para consultar: o comando responde "Nothing to update" para
 > sempre, mesmo com uma release nova publicada. E um
 > `flatpak install --bundle` cru recusa com "já instalado". O script cobre
-> os dois casos — ele detecta o que já está lá e reinstala por cima.
+> os dois casos — ele detecta o que já está lá, desinstala e instala a
+> versão nova, preservando seus dados.
+
+### AppImage (um arquivo só, sem instalar nada)
+
+Baixe o `CamView-*-x86_64.AppImage` da
+[página de releases](https://github.com/henr1quess30/camview/releases) e
+rode:
+
+```bash
+chmod +x CamView-*-x86_64.AppImage
+./CamView-*-x86_64.AppImage
+```
+
+> **Erro sobre `libfuse.so.2`?** Ubuntu 22.04+, Mint e Debian 12+ não
+> trazem mais essa biblioteca. Rode
+> `./CamView-*-x86_64.AppImage --appimage-extract-and-run`, que dispensa
+> o FUSE, ou instale-a: `sudo apt install libfuse2` (ou `libfuse2t64` nas
+> versões mais recentes).
+
+Construído sobre glibc 2.35, o que cobre Ubuntu 22.04+, Debian 12+,
+Fedora 36+ e o Mint atual. Distribuições mais antigas que isso precisam
+do Flatpak.
+
+Vale saber que **AppImage e Flatpak não compartilham dados**: o primeiro
+guarda em `~/.local/share/camview/` e o segundo em `~/.var/app/`. Instalar
+os dois na mesma máquina dá duas listas de câmeras independentes.
 
 ### Arch/EndeavourOS pelo PKGBUILD
 

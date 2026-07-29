@@ -91,11 +91,17 @@ echo "==> Bibliotecas compartilhadas de que tudo isso depende"
 # fontconfig cannot parse the configuration a current distribution
 # writes, and spends the app's first seconds printing parse errors about
 # the host's own font setup.
+#
+# Note the exclusion is libxcb.so itself, not libxcb-*. The helpers —
+# libxcb-cursor above all, which Qt 6.5+ requires for the xcb platform
+# plugin — are ordinary libraries that a desktop may simply not have
+# installed, and leaving them out is why an otherwise complete bundle
+# dies with "no Qt platform plugin could be initialized".
 is_excluded() {
     case "$1" in
         libc.so*|libm.so*|libdl.so*|libpthread.so*|librt.so*|libresolv.so*|\
         libGL.so*|libGLX.so*|libGLdispatch.so*|libEGL.so*|libgbm.so*|\
-        libdrm.so*|libX11.so*|libX11-xcb.so*|libxcb.so*|libxcb-*|\
+        libdrm.so*|libX11.so*|libX11-xcb.so*|libxcb.so*|\
         libgcc_s.so*|libstdc++.so*|ld-linux*|libnvidia*|libcuda*|\
         libfontconfig.so*|libfreetype.so*)
             return 0 ;;
